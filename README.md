@@ -254,7 +254,7 @@ Key insight: Use information gain to naturally balance relevance and diversity w
 
 ## License
 
-[Your License Here]
+MIT License
 
 ## Acknowledgments
 
@@ -264,7 +264,7 @@ Key insight: Use information gain to naturally balance relevance and diversity w
 
 ## Contact
 
-[Your Contact Information]
+For questions or contributions, please open an issue on GitHub.
 
 ---
 
