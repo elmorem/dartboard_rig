@@ -80,3 +80,43 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error message")
     detail: Optional[str] = Field(None, description="Detailed error information")
     status_code: int = Field(..., description="HTTP status code")
+
+
+class CompareRequest(BaseModel):
+    """Request model for /compare endpoint."""
+
+    query: str = Field(..., min_length=1, description="User question")
+    methods: List[str] = Field(
+        ["bm25", "dense", "hybrid"],
+        description="Retrieval methods to compare (bm25, dense, hybrid, dartboard)",
+    )
+    top_k: int = Field(5, ge=1, le=20, description="Number of chunks to retrieve")
+    use_reranker: bool = Field(
+        False, description="Apply cross-encoder reranking to all methods"
+    )
+
+
+class RetrievalMethodResult(BaseModel):
+    """Results from a single retrieval method."""
+
+    method: str = Field(..., description="Retrieval method name")
+    chunks: List[Dict[str, Any]] = Field(..., description="Retrieved chunks")
+    scores: List[float] = Field(..., description="Relevance scores")
+    latency_ms: float = Field(..., description="Retrieval latency (ms)")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Method-specific metadata"
+    )
+
+
+class CompareResponse(BaseModel):
+    """Response model for /compare endpoint."""
+
+    query: str = Field(..., description="Original query")
+    results: List[RetrievalMethodResult] = Field(
+        ..., description="Results from each retrieval method"
+    )
+    total_time_ms: float = Field(..., description="Total comparison time (ms)")
+    reranker_used: bool = Field(False, description="Whether reranking was applied")
+    comparison_metrics: Dict[str, Any] = Field(
+        default_factory=dict, description="Cross-method comparison statistics"
+    )

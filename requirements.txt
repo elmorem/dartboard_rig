@@ -26,6 +26,11 @@ openai>=1.0.0
 # Monitoring
 prometheus-client>=0.17.0
 
+# Retrieval & Evaluation
+rank-bm25>=0.2.2
+datasets>=2.14.0
+beir>=2.0.0
+
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
