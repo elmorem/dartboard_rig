@@ -1,0 +1,71 @@
+"""Monitoring and metrics for Dartboard RAG API."""
+
+from dartboard.monitoring.metrics import (
+    # Metrics
+    query_counter,
+    query_errors,
+    retrieval_latency,
+    generation_latency,
+    total_query_latency,
+    ingestion_counter,
+    ingestion_latency,
+    chunks_created,
+    chunks_stored,
+    vector_store_size,
+    chunks_retrieved,
+    auth_attempts,
+    rate_limit_hits,
+    requests_by_tier,
+    system_info,
+    # Decorators
+    track_query_time,
+    track_retrieval_time,
+    track_generation_time,
+    track_ingestion_time,
+    # Functions
+    record_chunks_retrieved,
+    record_chunks_created,
+    record_chunks_stored,
+    update_vector_store_size,
+    record_auth_attempt,
+    record_rate_limit_hit,
+    record_request_by_tier,
+    set_system_info,
+    get_metrics,
+    get_metrics_content_type,
+)
+
+__all__ = [
+    # Metrics
+    "query_counter",
+    "query_errors",
+    "retrieval_latency",
+    "generation_latency",
+    "total_query_latency",
+    "ingestion_counter",
+    "ingestion_latency",
+    "chunks_created",
+    "chunks_stored",
+    "vector_store_size",
+    "chunks_retrieved",
+    "auth_attempts",
+    "rate_limit_hits",
+    "requests_by_tier",
+    "system_info",
+    # Decorators
+    "track_query_time",
+    "track_retrieval_time",
+    "track_generation_time",
+    "track_ingestion_time",
+    # Functions
+    "record_chunks_retrieved",
+    "record_chunks_created",
+    "record_chunks_stored",
+    "update_vector_store_size",
+    "record_auth_attempt",
+    "record_rate_limit_hit",
+    "record_request_by_tier",
+    "set_system_info",
+    "get_metrics",
+    "get_metrics_content_type",
+]

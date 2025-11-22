@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from dartboard.api.models import (
@@ -34,6 +34,17 @@ from dartboard.api.dependencies import (
 )
 from dartboard.api.auth import verify_api_key, APIKeyInfo
 from dartboard.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
+from dartboard.monitoring import (
+    get_metrics,
+    get_metrics_content_type,
+    set_system_info,
+    record_chunks_retrieved,
+    record_chunks_created,
+    record_chunks_stored,
+    update_vector_store_size,
+    retrieval_latency,
+    generation_latency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +69,23 @@ app.add_middleware(RateLimitMiddleware)
 
 # Add request logging middleware
 app.add_middleware(RequestLoggingMiddleware)
+
+
+# Startup event to initialize metrics
+@app.on_event("startup")
+async def startup_event():
+    """Initialize system metrics on startup."""
+    config = {
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "llm_model": "gpt-3.5-turbo",
+    }
+    set_system_info(
+        version="1.0.0",
+        embedding_model=config["embedding_model"],
+        llm_model=config["llm_model"],
+        vector_store_type="faiss",
+    )
+    logger.info("Metrics initialized")
 
 
 @app.post("/query", response_model=QueryResponse, tags=["Query"])
@@ -98,6 +126,10 @@ async def query(
 
         retrieval_time = (time.time() - retrieval_start) * 1000  # ms
 
+        # Record retrieval metrics
+        retrieval_latency.observe(retrieval_time / 1000)  # Convert to seconds
+        record_chunks_retrieved(len(retrieval_result.chunks))
+
         if not retrieval_result.chunks:
             raise HTTPException(
                 status_code=404,
@@ -116,6 +148,9 @@ async def query(
 
         generation_time = (time.time() - generation_start) * 1000  # ms
         total_time = (time.time() - start_time) * 1000  # ms
+
+        # Record generation metrics
+        generation_latency.observe(generation_time / 1000)  # Convert to seconds
 
         # Build response
         sources = [
@@ -221,6 +256,10 @@ async def ingest_document(
 
         processing_time = (time.time() - start_time) * 1000  # ms
 
+        # Record ingestion metrics
+        record_chunks_created(result.chunks_created)
+        record_chunks_stored(result.chunks_stored)
+
         response = IngestResponse(
             status=result.status,
             documents_processed=result.documents_processed,
@@ -268,6 +307,9 @@ async def health_check(
         except:
             count = 0
 
+        # Update vector store size metric
+        update_vector_store_size(count)
+
         response = HealthResponse(
             status="healthy",
             vector_store_count=count,
@@ -294,9 +336,27 @@ async def root():
             "query": "POST /query - Answer questions using RAG",
             "ingest": "POST /ingest - Ingest documents",
             "health": "GET /health - Health check",
+            "metrics": "GET /metrics - Prometheus metrics",
             "docs": "GET /docs - Interactive API documentation",
         },
     }
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+
+    Returns metrics in Prometheus text exposition format for monitoring:
+    - Query/ingestion counters and latencies
+    - Vector store size and chunks retrieved
+    - Authentication and rate limiting stats
+    - System information
+
+    Returns:
+        Response: Prometheus metrics in text format
+    """
+    return Response(content=get_metrics(), media_type=get_metrics_content_type())
 
 
 # Error handlers
