@@ -13,20 +13,18 @@ faiss-cpu>=1.7.4
 pypdf>=4.0.0
 pyyaml>=6.0
 
-# API (optional, for production)
-# fastapi>=0.100.0
-# uvicorn[standard]>=0.23.0
-# python-multipart>=0.0.6
-# pydantic>=2.0.0
-# pydantic-settings>=2.0.0
+# API
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
 
-# LLM Integration (optional)
-# openai>=1.0.0
-# anthropic>=0.3.0
+# LLM Integration
+openai>=1.0.0
 
-# Monitoring (optional)
-# prometheus-client>=0.17.0
-# slowapi>=0.1.9  # Rate limiting
+# Monitoring
+prometheus-client>=0.17.0
 
 # Testing
 pytest>=7.4.0

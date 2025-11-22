@@ -1,0 +1,27 @@
+# Prometheus configuration for Dartboard RAG API monitoring
+
+global:
+  scrape_interval: 15s  # Scrape targets every 15 seconds
+  evaluation_interval: 15s  # Evaluate rules every 15 seconds
+  external_labels:
+    cluster: 'dartboard-rag'
+    environment: 'production'
+
+# Scrape configurations
+scrape_configs:
+  # Dartboard RAG API metrics
+  - job_name: 'dartboard-rag-api'
+    static_configs:
+      - targets: ['api:8000']
+        labels:
+          service: 'rag-api'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
