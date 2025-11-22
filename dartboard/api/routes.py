@@ -32,6 +32,8 @@ from dartboard.api.dependencies import (
     get_vector_store,
     get_config,
 )
+from dartboard.api.auth import verify_api_key, APIKeyInfo
+from dartboard.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +53,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
+
+# Add request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
+
 
 @app.post("/query", response_model=QueryResponse, tags=["Query"])
 async def query(
     request: QueryRequest,
+    api_key: APIKeyInfo = Depends(verify_api_key),
     retriever=Depends(get_hybrid_retriever),
     generator=Depends(get_rag_generator),
 ):
     """
     Answer a question using RAG.
+
+    Requires authentication via X-API-Key header.
 
     Process:
     1. Retrieve relevant chunks using hybrid retrieval (vector + Dartboard)
@@ -67,6 +78,7 @@ async def query(
 
     Args:
         request: Query request with question and parameters
+        api_key: Verified API key info (injected)
         retriever: Hybrid retriever (injected)
         generator: RAG generator (injected)
 
@@ -149,10 +161,13 @@ async def ingest_document(
     chunk_size: int = Form(512, ge=100, le=2000, description="Max tokens per chunk"),
     overlap: int = Form(50, ge=0, le=500, description="Token overlap between chunks"),
     track_progress: bool = Form(False, description="Enable progress logging"),
+    api_key: APIKeyInfo = Depends(verify_api_key),
     pipeline=Depends(get_ingestion_pipeline),
 ):
     """
     Ingest a document into the vector store.
+
+    Requires authentication via X-API-Key header.
 
     Process:
     1. Save uploaded file temporarily
@@ -166,6 +181,7 @@ async def ingest_document(
         chunk_size: Maximum tokens per chunk
         overlap: Token overlap between chunks
         track_progress: Enable progress logging
+        api_key: Verified API key info (injected)
         pipeline: Ingestion pipeline (injected)
 
     Returns:
