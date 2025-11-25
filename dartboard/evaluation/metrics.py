@@ -1,391 +1,369 @@
-from __future__ import annotations
-
 """
-Evaluation metrics for Dartboard RAG retrieval.
+Evaluation metrics for retrieval systems.
 
-Implements standard IR metrics plus diversity measures:
-- NDCG (Normalized Discounted Cumulative Gain)
-- Precision@K / Recall@K
+Implements standard Information Retrieval metrics:
+- Mean Reciprocal Rank (MRR@K)
+- Recall@K
+- Precision@K
+- Normalized Discounted Cumulative Gain (NDCG@K)
 - Mean Average Precision (MAP)
-- Diversity metrics (intra-list distance, coverage)
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+import logging
+from typing import List, Dict, Set, Any
 import numpy as np
-from dataclasses import dataclass
-from dartboard.datasets.models import Chunk, RetrievalResult, Dataset
-from dartboard.utils import cosine_distance
+
+logger = logging.getLogger(__name__)
 
 
-@dataclass
-class MetricResult:
-    """Container for evaluation metric results."""
+def mean_reciprocal_rank(
+    results: List[str], relevant_docs: Set[str], k: int = 10
+) -> float:
+    """
+    Calculate Mean Reciprocal Rank at K.
 
-    metric_name: str
-    value: float
-    metadata: Dict[str, Any]
+    MRR@K = 1 / rank of first relevant document (if within top K)
+
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Cutoff rank (default: 10)
+
+    Returns:
+        MRR score (0.0 to 1.0)
+
+    Example:
+        >>> results = ["doc1", "doc2", "doc3"]
+        >>> relevant = {"doc2"}
+        >>> mean_reciprocal_rank(results, relevant, k=10)
+        0.5  # First relevant doc at rank 2, so 1/2 = 0.5
+    """
+    if not results or not relevant_docs:
+        return 0.0
+
+    # Check only top-k results
+    for rank, doc_id in enumerate(results[:k], 1):
+        if doc_id in relevant_docs:
+            return 1.0 / rank
+
+    return 0.0
 
 
-@dataclass
-class EvaluationReport:
-    """Complete evaluation report for a retrieval system."""
+def recall_at_k(results: List[str], relevant_docs: Set[str], k: int = 10) -> float:
+    """
+    Calculate Recall at K.
 
-    dataset_name: str
-    metrics: Dict[str, float]
-    per_query_metrics: Dict[str, Dict[str, float]]
-    metadata: Dict[str, Any]
+    Recall@K = (# relevant docs in top K) / (total # relevant docs)
 
-    def summary(self) -> str:
-        """Generate human-readable summary."""
-        lines = [f"Evaluation Report: {self.dataset_name}", "=" * 50]
-        for metric, value in self.metrics.items():
-            lines.append(f"{metric:30s}: {value:.4f}")
-        return "\n".join(lines)
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Cutoff rank (default: 10)
+
+    Returns:
+        Recall score (0.0 to 1.0)
+
+    Example:
+        >>> results = ["doc1", "doc2", "doc3"]
+        >>> relevant = {"doc2", "doc4"}
+        >>> recall_at_k(results, relevant, k=10)
+        0.5  # 1 out of 2 relevant docs found
+    """
+    if not relevant_docs:
+        return 0.0
+
+    if not results:
+        return 0.0
+
+    # Get top-k results
+    top_k = set(results[:k])
+
+    # Count relevant docs in top-k
+    relevant_in_top_k = top_k & relevant_docs
+
+    return len(relevant_in_top_k) / len(relevant_docs)
 
 
-class RetrievalEvaluator:
-    """Evaluates retrieval system performance."""
+def precision_at_k(results: List[str], relevant_docs: Set[str], k: int = 10) -> float:
+    """
+    Calculate Precision at K.
 
-    def __init__(self, k_values: List[int] = [1, 3, 5, 10]):
-        """
-        Initialize evaluator.
+    Precision@K = (# relevant docs in top K) / K
 
-        Args:
-            k_values: List of K values for Precision@K and Recall@K
-        """
-        self.k_values = k_values
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Cutoff rank (default: 10)
 
-    def evaluate_dataset(
-        self, results: List[RetrievalResult], dataset: Dataset
-    ) -> EvaluationReport:
-        """
-        Evaluate retrieval results against ground truth.
+    Returns:
+        Precision score (0.0 to 1.0)
 
-        Args:
-            results: List of retrieval results (one per query)
-            dataset: Dataset with ground truth
+    Example:
+        >>> results = ["doc1", "doc2", "doc3"]
+        >>> relevant = {"doc2"}
+        >>> precision_at_k(results, relevant, k=3)
+        0.333  # 1 out of 3 docs is relevant
+    """
+    if not results:
+        return 0.0
 
-        Returns:
-            Complete evaluation report
-        """
-        if len(results) != len(dataset.queries):
-            raise ValueError(
-                f"Number of results ({len(results)}) must match queries ({len(dataset.queries)})"
-            )
+    # Get top-k results (or all if fewer than k)
+    top_k = results[:k]
 
-        per_query_metrics = {}
-        aggregate_metrics = {
-            "ndcg": [],
-            "map": [],
-            "diversity": [],
+    if not top_k:
+        return 0.0
+
+    # Count relevant docs in top-k
+    relevant_in_top_k = sum(1 for doc_id in top_k if doc_id in relevant_docs)
+
+    return relevant_in_top_k / len(top_k)
+
+
+def dcg_at_k(
+    results: List[str],
+    relevant_docs: Set[str],
+    k: int = 10,
+    gains: Dict[str, float] = None,
+) -> float:
+    """
+    Calculate Discounted Cumulative Gain at K.
+
+    DCG@K = sum_{i=1}^K (gain_i / log2(i + 1))
+
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Cutoff rank (default: 10)
+        gains: Optional dict mapping doc_id to relevance gain (default: binary 1.0)
+
+    Returns:
+        DCG score
+    """
+    if not results:
+        return 0.0
+
+    dcg = 0.0
+    for rank, doc_id in enumerate(results[:k], 1):
+        if doc_id in relevant_docs:
+            # Use provided gain or default to 1.0 for binary relevance
+            gain = gains.get(doc_id, 1.0) if gains else 1.0
+            dcg += gain / np.log2(rank + 1)
+
+    return dcg
+
+
+def ndcg_at_k(
+    results: List[str],
+    relevant_docs: Set[str],
+    k: int = 10,
+    gains: Dict[str, float] = None,
+) -> float:
+    """
+    Calculate Normalized Discounted Cumulative Gain at K.
+
+    NDCG@K = DCG@K / IDCG@K
+
+    where IDCG@K is the ideal DCG (if all relevant docs were at top).
+
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Cutoff rank (default: 10)
+        gains: Optional dict mapping doc_id to relevance gain (default: binary 1.0)
+
+    Returns:
+        NDCG score (0.0 to 1.0)
+
+    Example:
+        >>> results = ["doc1", "doc2", "doc3"]
+        >>> relevant = {"doc2", "doc3"}
+        >>> ndcg_at_k(results, relevant, k=10)
+        0.785  # Example score
+    """
+    if not relevant_docs:
+        return 0.0
+
+    # Calculate actual DCG
+    actual_dcg = dcg_at_k(results, relevant_docs, k, gains)
+
+    # Calculate ideal DCG (all relevant docs ranked first)
+    if gains:
+        # Sort relevant docs by gain (descending)
+        ideal_ranking = sorted(
+            relevant_docs, key=lambda doc_id: gains.get(doc_id, 1.0), reverse=True
+        )
+    else:
+        # For binary relevance, any ordering of relevant docs is ideal
+        ideal_ranking = list(relevant_docs)
+
+    ideal_dcg = dcg_at_k(ideal_ranking, relevant_docs, k, gains)
+
+    # Normalize
+    if ideal_dcg == 0.0:
+        return 0.0
+
+    return actual_dcg / ideal_dcg
+
+
+def average_precision(
+    results: List[str], relevant_docs: Set[str], k: int = None
+) -> float:
+    """
+    Calculate Average Precision.
+
+    AP = (1 / # relevant docs) * sum of (Precision@i * is_relevant_i)
+
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k: Optional cutoff rank (default: all results)
+
+    Returns:
+        Average Precision score (0.0 to 1.0)
+    """
+    if not relevant_docs or not results:
+        return 0.0
+
+    # Limit to top-k if specified
+    results_to_check = results[:k] if k else results
+
+    num_relevant = 0
+    precision_sum = 0.0
+
+    for rank, doc_id in enumerate(results_to_check, 1):
+        if doc_id in relevant_docs:
+            num_relevant += 1
+            precision_sum += num_relevant / rank
+
+    if num_relevant == 0:
+        return 0.0
+
+    return precision_sum / len(relevant_docs)
+
+
+def evaluate_retrieval(
+    results: List[str],
+    relevant_docs: Set[str],
+    k_values: List[int] = [1, 5, 10, 20, 100],
+    gains: Dict[str, float] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluate retrieval results with multiple metrics.
+
+    Args:
+        results: List of retrieved document IDs (in ranked order)
+        relevant_docs: Set of relevant document IDs
+        k_values: List of K values to compute metrics at
+        gains: Optional dict mapping doc_id to relevance gain
+
+    Returns:
+        Dict of metric names to scores
+
+    Example:
+        >>> results = ["doc1", "doc2", "doc3", "doc4"]
+        >>> relevant = {"doc2", "doc4"}
+        >>> evaluate_retrieval(results, relevant, k_values=[1, 5, 10])
+        {
+            'MRR@10': 0.5,
+            'Recall@1': 0.0,
+            'Recall@5': 1.0,
+            'Precision@1': 0.0,
+            'Precision@5': 0.4,
+            'NDCG@1': 0.0,
+            'NDCG@5': 0.756,
+            'AP': 0.625
         }
+    """
+    metrics = {}
 
-        # Add precision/recall for each K
-        for k in self.k_values:
-            aggregate_metrics[f"precision@{k}"] = []
-            aggregate_metrics[f"recall@{k}"] = []
+    # MRR (typically computed at max K)
+    max_k = max(k_values) if k_values else 10
+    metrics[f"MRR@{max_k}"] = mean_reciprocal_rank(results, relevant_docs, k=max_k)
 
-        # Evaluate each query
-        for i, (result, query) in enumerate(zip(results, dataset.queries)):
-            query_id = f"query_{i}"
-            ground_truth = dataset.ground_truth.get(query_id, [])
+    # Compute metrics at each K value
+    for k in k_values:
+        metrics[f"Recall@{k}"] = recall_at_k(results, relevant_docs, k=k)
+        metrics[f"Precision@{k}"] = precision_at_k(results, relevant_docs, k=k)
+        metrics[f"NDCG@{k}"] = ndcg_at_k(results, relevant_docs, k=k, gains=gains)
 
-            # Compute metrics
-            metrics = {}
-            metrics["ndcg"] = self.compute_ndcg(result, ground_truth)
-            metrics["diversity"] = self.compute_diversity(result)
+    # Average Precision (no K cutoff)
+    metrics["AP"] = average_precision(results, relevant_docs)
 
-            for k in self.k_values:
-                p, r = self.compute_precision_recall(result, ground_truth, k)
-                metrics[f"precision@{k}"] = p
-                metrics[f"recall@{k}"] = r
+    return metrics
 
-            # Store per-query metrics
-            per_query_metrics[query_id] = metrics
 
-            # Aggregate
-            for key, value in metrics.items():
-                if key in aggregate_metrics:
-                    aggregate_metrics[key].append(value)
+def mean_average_precision(
+    all_results: List[List[str]], all_relevant_docs: List[Set[str]], k: int = None
+) -> float:
+    """
+    Calculate Mean Average Precision (MAP) across multiple queries.
 
-        # Compute MAP separately
-        aggregate_metrics["map"] = [
-            self.compute_average_precision(
-                results[i], dataset.ground_truth.get(f"query_{i}", [])
-            )
-            for i in range(len(results))
-        ]
+    MAP = mean of Average Precision scores across all queries
 
-        # Average all metrics
-        averaged_metrics = {
-            key: np.mean(values) for key, values in aggregate_metrics.items()
-        }
+    Args:
+        all_results: List of result lists (one per query)
+        all_relevant_docs: List of relevant doc sets (one per query)
+        k: Optional cutoff rank
 
-        return EvaluationReport(
-            dataset_name=dataset.name,
-            metrics=averaged_metrics,
-            per_query_metrics=per_query_metrics,
-            metadata={"num_queries": len(results), "k_values": self.k_values},
+    Returns:
+        MAP score (0.0 to 1.0)
+    """
+    if not all_results or not all_relevant_docs:
+        return 0.0
+
+    if len(all_results) != len(all_relevant_docs):
+        raise ValueError(
+            "Number of result lists must match number of relevant doc sets"
         )
 
-    def compute_ndcg(
-        self, result: RetrievalResult, ground_truth: List[str], k: Optional[int] = None
-    ) -> float:
-        """
-        Compute Normalized Discounted Cumulative Gain.
+    ap_scores = [
+        average_precision(results, relevant_docs, k=k)
+        for results, relevant_docs in zip(all_results, all_relevant_docs)
+    ]
 
-        Args:
-            result: Retrieval result
-            ground_truth: List of relevant chunk IDs
-            k: Optional cutoff (uses all results if None)
-
-        Returns:
-            NDCG score in [0, 1]
-        """
-        if not ground_truth:
-            return 0.0
-
-        retrieved_ids = [chunk.id for chunk in result.chunks]
-        if k is not None:
-            retrieved_ids = retrieved_ids[:k]
-
-        # Compute DCG
-        dcg = 0.0
-        for i, chunk_id in enumerate(retrieved_ids):
-            relevance = 1.0 if chunk_id in ground_truth else 0.0
-            dcg += relevance / np.log2(i + 2)  # i+2 because i is 0-indexed
-
-        # Compute IDCG (ideal DCG)
-        ideal_relevance = [1.0] * min(len(ground_truth), len(retrieved_ids))
-        idcg = sum(rel / np.log2(i + 2) for i, rel in enumerate(ideal_relevance))
-
-        if idcg == 0:
-            return 0.0
-
-        return dcg / idcg
-
-    def compute_precision_recall(
-        self, result: RetrievalResult, ground_truth: List[str], k: int
-    ) -> Tuple[float, float]:
-        """
-        Compute Precision@K and Recall@K.
-
-        Args:
-            result: Retrieval result
-            ground_truth: List of relevant chunk IDs
-            k: Cutoff value
-
-        Returns:
-            (precision, recall) tuple
-        """
-        if not ground_truth:
-            return 0.0, 0.0
-
-        retrieved_ids = [chunk.id for chunk in result.chunks[:k]]
-        relevant_retrieved = len(set(retrieved_ids) & set(ground_truth))
-
-        precision = relevant_retrieved / k if k > 0 else 0.0
-        recall = relevant_retrieved / len(ground_truth) if ground_truth else 0.0
-
-        return precision, recall
-
-    def compute_average_precision(
-        self, result: RetrievalResult, ground_truth: List[str]
-    ) -> float:
-        """
-        Compute Average Precision (AP).
-
-        Args:
-            result: Retrieval result
-            ground_truth: List of relevant chunk IDs
-
-        Returns:
-            AP score
-        """
-        if not ground_truth:
-            return 0.0
-
-        retrieved_ids = [chunk.id for chunk in result.chunks]
-        precisions = []
-        num_relevant = 0
-
-        for i, chunk_id in enumerate(retrieved_ids):
-            if chunk_id in ground_truth:
-                num_relevant += 1
-                precision_at_i = num_relevant / (i + 1)
-                precisions.append(precision_at_i)
-
-        if not precisions:
-            return 0.0
-
-        return sum(precisions) / len(ground_truth)
-
-    def compute_diversity(self, result: RetrievalResult) -> float:
-        """
-        Compute diversity score (average pairwise distance).
-
-        Args:
-            result: Retrieval result
-
-        Returns:
-            Diversity score (higher = more diverse)
-        """
-        if len(result.chunks) < 2:
-            return 0.0
-
-        embeddings = [chunk.embedding for chunk in result.chunks]
-        distances = []
-
-        for i in range(len(embeddings)):
-            for j in range(i + 1, len(embeddings)):
-                dist = cosine_distance(embeddings[i], embeddings[j])
-                distances.append(dist)
-
-        return float(np.mean(distances))
-
-    def compute_coverage(
-        self, result: RetrievalResult, ground_truth_clusters: Dict[str, int]
-    ) -> float:
-        """
-        Compute cluster coverage (what fraction of clusters are represented).
-
-        Args:
-            result: Retrieval result
-            ground_truth_clusters: Mapping of chunk_id -> cluster_id
-
-        Returns:
-            Coverage score in [0, 1]
-        """
-        if not ground_truth_clusters:
-            return 0.0
-
-        retrieved_ids = [chunk.id for chunk in result.chunks]
-        retrieved_clusters = set(
-            ground_truth_clusters.get(chunk_id)
-            for chunk_id in retrieved_ids
-            if chunk_id in ground_truth_clusters
-        )
-        retrieved_clusters.discard(None)
-
-        all_clusters = set(ground_truth_clusters.values())
-        if not all_clusters:
-            return 0.0
-
-        return len(retrieved_clusters) / len(all_clusters)
+    return np.mean(ap_scores)
 
 
-class ComparisonEvaluator:
-    """Compare multiple retrieval systems."""
+def evaluate_batch(
+    all_results: List[List[str]],
+    all_relevant_docs: List[Set[str]],
+    k_values: List[int] = [1, 5, 10, 20, 100],
+) -> Dict[str, float]:
+    """
+    Evaluate multiple queries and compute average metrics.
 
-    def __init__(self):
-        """Initialize comparison evaluator."""
-        self.evaluator = RetrievalEvaluator()
+    Args:
+        all_results: List of result lists (one per query)
+        all_relevant_docs: List of relevant doc sets (one per query)
+        k_values: List of K values to compute metrics at
 
-    def compare_systems(
-        self,
-        system_results: Dict[str, List[RetrievalResult]],
-        dataset: Dataset,
-    ) -> Dict[str, EvaluationReport]:
-        """
-        Compare multiple systems on the same dataset.
+    Returns:
+        Dict of metric names to average scores across queries
+    """
+    if not all_results or not all_relevant_docs:
+        return {}
 
-        Args:
-            system_results: Dict of system_name -> list of results
-            dataset: Evaluation dataset
-
-        Returns:
-            Dict of system_name -> evaluation report
-        """
-        reports = {}
-        for system_name, results in system_results.items():
-            reports[system_name] = self.evaluator.evaluate_dataset(results, dataset)
-        return reports
-
-    def generate_comparison_table(self, reports: Dict[str, EvaluationReport]) -> str:
-        """
-        Generate comparison table.
-
-        Args:
-            reports: Dict of system_name -> report
-
-        Returns:
-            Formatted table string
-        """
-        if not reports:
-            return "No reports to compare"
-
-        # Get all metrics
-        all_metrics = set()
-        for report in reports.values():
-            all_metrics.update(report.metrics.keys())
-
-        # Sort metrics
-        metric_order = ["ndcg", "map", "diversity"]
-        sorted_metrics = sorted(
-            all_metrics,
-            key=lambda x: (
-                metric_order.index(x) if x in metric_order else 999,
-                x,
-            ),
+    if len(all_results) != len(all_relevant_docs):
+        raise ValueError(
+            "Number of result lists must match number of relevant doc sets"
         )
 
-        # Build table
-        lines = ["System Comparison", "=" * 80]
+    # Collect metrics for each query
+    all_metrics = [
+        evaluate_retrieval(results, relevant_docs, k_values)
+        for results, relevant_docs in zip(all_results, all_relevant_docs)
+    ]
 
-        # Header
-        header = f"{'Metric':<20}"
-        for system_name in reports.keys():
-            header += f"{system_name:>15}"
-        lines.append(header)
-        lines.append("-" * 80)
+    # Average across queries
+    avg_metrics = {}
+    for metric_name in all_metrics[0].keys():
+        scores = [m[metric_name] for m in all_metrics]
+        avg_metrics[metric_name] = np.mean(scores)
 
-        # Rows
-        for metric in sorted_metrics:
-            row = f"{metric:<20}"
-            for report in reports.values():
-                value = report.metrics.get(metric, 0.0)
-                row += f"{value:>15.4f}"
-            lines.append(row)
+    # Add MAP
+    max_k = max(k_values) if k_values else None
+    avg_metrics[f"MAP@{max_k}"] = mean_average_precision(
+        all_results, all_relevant_docs, k=max_k
+    )
 
-        return "\n".join(lines)
-
-
-class DiversityAnalyzer:
-    """Analyze diversity properties of retrieved results."""
-
-    def analyze_diversity(
-        self, result: RetrievalResult, num_bins: int = 10
-    ) -> Dict[str, Any]:
-        """
-        Analyze diversity characteristics.
-
-        Args:
-            result: Retrieval result
-            num_bins: Number of bins for distance histogram
-
-        Returns:
-            Dictionary with diversity statistics
-        """
-        if len(result.chunks) < 2:
-            return {"error": "Need at least 2 chunks for diversity analysis"}
-
-        embeddings = [chunk.embedding for chunk in result.chunks]
-        distances = []
-
-        # Compute all pairwise distances
-        for i in range(len(embeddings)):
-            for j in range(i + 1, len(embeddings)):
-                dist = cosine_distance(embeddings[i], embeddings[j])
-                distances.append(dist)
-
-        distances = np.array(distances)
-
-        return {
-            "mean_distance": float(np.mean(distances)),
-            "std_distance": float(np.std(distances)),
-            "min_distance": float(np.min(distances)),
-            "max_distance": float(np.max(distances)),
-            "median_distance": float(np.median(distances)),
-            "num_pairs": len(distances),
-            "histogram": np.histogram(distances, bins=num_bins)[0].tolist(),
-        }
+    return avg_metrics

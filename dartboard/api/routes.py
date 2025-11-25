@@ -24,6 +24,9 @@ from dartboard.api.models import (
     IngestResponse,
     HealthResponse,
     ErrorResponse,
+    CompareRequest,
+    CompareResponse,
+    RetrievalMethodResult,
 )
 from dartboard.api.dependencies import (
     get_hybrid_retriever,
@@ -334,12 +337,198 @@ async def root():
         "description": "Retrieval-Augmented Generation with Dartboard algorithm",
         "endpoints": {
             "query": "POST /query - Answer questions using RAG",
+            "compare": "POST /compare - Compare multiple retrieval methods",
             "ingest": "POST /ingest - Ingest documents",
             "health": "GET /health - Health check",
             "metrics": "GET /metrics - Prometheus metrics",
             "docs": "GET /docs - Interactive API documentation",
         },
     }
+
+
+@app.post("/compare", response_model=CompareResponse, tags=["Comparison"])
+async def compare_retrievers(
+    request: CompareRequest,
+    api_key: APIKeyInfo = Depends(verify_api_key),
+    vector_store=Depends(get_vector_store),
+):
+    """
+    Compare multiple retrieval methods on the same query.
+
+    Requires authentication via X-API-Key header.
+
+    Supported methods:
+    - bm25: BM25 sparse retrieval
+    - dense: Dense vector similarity
+    - hybrid: Hybrid BM25 + Dense with RRF fusion
+    - dartboard: Dartboard algorithm (existing hybrid retriever)
+
+    Args:
+        request: Comparison request with query and methods
+        api_key: Verified API key info (injected)
+        vector_store: Vector store (injected)
+
+    Returns:
+        CompareResponse with results from each method and comparison metrics
+    """
+    try:
+        from dartboard.retrieval.bm25 import BM25Retriever
+        from dartboard.retrieval.dense import DenseRetriever
+        from dartboard.retrieval.hybrid import HybridRetriever
+        from dartboard.retrieval.reranker import CrossEncoderReranker
+
+        start_time = time.time()
+
+        # Validate methods
+        valid_methods = {"bm25", "dense", "hybrid", "dartboard"}
+        invalid_methods = set(request.methods) - valid_methods
+        if invalid_methods:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid methods: {invalid_methods}. "
+                f"Valid methods: {valid_methods}",
+            )
+
+        # Get all chunks from vector store for BM25/Dense
+        all_chunks = vector_store.get_all_chunks()
+        if not all_chunks:
+            raise HTTPException(
+                status_code=404,
+                detail="No documents in vector store. Please ingest documents first.",
+            )
+
+        # Initialize retrievers
+        retrievers = {}
+
+        if "bm25" in request.methods:
+            bm25 = BM25Retriever(vector_store=vector_store)
+            bm25.fit(all_chunks)
+            retrievers["bm25"] = bm25
+
+        if "dense" in request.methods:
+            retrievers["dense"] = DenseRetriever(vector_store=vector_store)
+
+        if "hybrid" in request.methods:
+            bm25_for_hybrid = BM25Retriever(vector_store=vector_store)
+            bm25_for_hybrid.fit(all_chunks)
+            dense_for_hybrid = DenseRetriever(vector_store=vector_store)
+            retrievers["hybrid"] = HybridRetriever(
+                vector_store=vector_store,
+                bm25_retriever=bm25_for_hybrid,
+                dense_retriever=dense_for_hybrid,
+            )
+
+        if "dartboard" in request.methods:
+            from dartboard.api.dependencies import get_hybrid_retriever
+
+            retrievers["dartboard"] = get_hybrid_retriever()
+
+        # Initialize reranker if requested
+        reranker = None
+        if request.use_reranker:
+            reranker = CrossEncoderReranker()
+
+        # Run each retrieval method
+        results = []
+        all_chunk_ids = set()
+
+        for method_name, retriever in retrievers.items():
+            logger.info(
+                f"Running {method_name} retrieval for query: {request.query[:100]}"
+            )
+
+            # Retrieve chunks
+            retrieval_result = retriever.retrieve(
+                query=request.query,
+                k=request.top_k if not request.use_reranker else request.top_k * 3,
+            )
+
+            # Apply reranking if requested
+            if request.use_reranker and reranker:
+                retrieval_result = reranker.rerank(
+                    query=request.query,
+                    chunks=retrieval_result.chunks,
+                    top_k=request.top_k,
+                )
+
+            # Track unique chunks across all methods
+            chunk_ids = {chunk.id for chunk in retrieval_result.chunks}
+            all_chunk_ids.update(chunk_ids)
+
+            # Build result
+            chunks_data = [
+                {
+                    "id": chunk.id,
+                    "text": chunk.text,
+                    "metadata": chunk.metadata,
+                    "score": score,
+                }
+                for chunk, score in zip(
+                    retrieval_result.chunks, retrieval_result.scores
+                )
+            ]
+
+            method_result = RetrievalMethodResult(
+                method=method_name + (" + reranker" if request.use_reranker else ""),
+                chunks=chunks_data,
+                scores=retrieval_result.scores,
+                latency_ms=round(retrieval_result.latency_ms, 2),
+                metadata=retrieval_result.metadata,
+            )
+
+            results.append(method_result)
+
+        total_time = (time.time() - start_time) * 1000  # ms
+
+        # Calculate comparison metrics
+        comparison_metrics = {
+            "total_unique_chunks": len(all_chunk_ids),
+            "methods_compared": len(results),
+            "avg_latency_ms": round(
+                sum(r.latency_ms for r in results) / len(results), 2
+            ),
+        }
+
+        # Calculate overlap between methods
+        if len(results) >= 2:
+            overlap_matrix = {}
+            for i, result1 in enumerate(results):
+                for j, result2 in enumerate(results):
+                    if i < j:
+                        chunks1 = {c["id"] for c in result1.chunks}
+                        chunks2 = {c["id"] for c in result2.chunks}
+                        overlap = len(chunks1 & chunks2)
+                        key = f"{result1.method}_vs_{result2.method}"
+                        overlap_matrix[key] = {
+                            "overlap_count": overlap,
+                            "overlap_percentage": round(
+                                overlap / min(len(chunks1), len(chunks2)) * 100, 1
+                            ),
+                        }
+            comparison_metrics["overlap"] = overlap_matrix
+
+        response = CompareResponse(
+            query=request.query,
+            results=results,
+            total_time_ms=round(total_time, 2),
+            reranker_used=request.use_reranker,
+            comparison_metrics=comparison_metrics,
+        )
+
+        logger.info(
+            f"Comparison completed in {total_time:.0f}ms "
+            f"({len(results)} methods compared)"
+        )
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Comparison failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Retrieval comparison failed: {str(e)}"
+        )
 
 
 @app.get("/metrics", tags=["Monitoring"])
