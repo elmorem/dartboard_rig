@@ -81,6 +81,25 @@ services:
     depends_on:
       - prometheus
 
+  # Streamlit UI for retrieval comparison
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: dartboard-streamlit
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    environment:
+      - API_BASE_URL=http://api:8000
+      - API_KEY=${API_KEY:-dev-key-12345}
+    networks:
+      - rag-network
+    restart: unless-stopped
+    depends_on:
+      - api
+    profiles:
+      - ui
+
 networks:
   rag-network:
     driver: bridge

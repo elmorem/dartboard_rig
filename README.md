@@ -12,7 +12,8 @@ Dartboard is a RAG system that uses **relevant information gain** to select dive
 **Key Features:**
 - 🎯 **Dartboard Algorithm** - Information gain-based retrieval
 - 📄 **Document Loaders** - PDF, Markdown, Code repositories
-- 🔍 **Hybrid Retrieval** - Vector search + Dartboard refinement
+- 🔍 **Multiple Retrieval Methods** - BM25, Dense, Hybrid (RRF), Dartboard
+- 🖥️ **Streamlit UI** - Interactive comparison interface
 - 🚀 **High Performance** - 5,790 passages/sec throughput
 - 📊 **Comprehensive Metrics** - NDCG, MAP, Precision@K, Diversity
 - ✅ **Production Ready** - Docker, monitoring, authentication
@@ -69,6 +70,37 @@ python demo_dartboard_evaluation.py
 # Test document loaders
 python test_loaders.py
 ```
+
+### Streamlit Comparison UI
+
+Launch the interactive web interface to compare retrieval methods:
+
+```bash
+# Start FastAPI backend
+uvicorn dartboard.api.main:app --reload
+
+# In a separate terminal, start Streamlit UI
+streamlit run streamlit_app/app.py
+```
+
+Or using Docker:
+
+```bash
+# Start both API and Streamlit UI
+docker-compose --profile ui up
+
+# Access Streamlit at http://localhost:8501
+# Access API docs at http://localhost:8000/docs
+```
+
+**Features:**
+
+- Compare BM25, Dense, Hybrid, and Dartboard retrievers side-by-side
+- Adjust top-k results and enable cross-encoder reranking
+- View score distributions, latency comparisons, and overlap analysis
+- Interactive visualizations with Plotly charts
+
+See [streamlit_app/README.md](streamlit_app/README.md) for detailed usage.
 
 ## Architecture
 
