@@ -156,13 +156,13 @@ class BenchmarkRunner:
             retriever = BM25Retriever()
             retriever.fit(chunks)
         elif method_name == "dense":
-            # Create dense retriever and generate embeddings
-            dense = DenseRetriever()
+            # Create dense retriever for encoding
+            dense_encoder = DenseRetriever()
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
 
             # Generate embeddings for all chunks
             texts = [chunk.text for chunk in chunks]
-            embeddings = dense.encode_batch(texts, batch_size=32)
+            embeddings = dense_encoder.encode_batch(texts, batch_size=32)
 
             # Add embeddings to chunks
             for chunk, embedding in zip(chunks, embeddings):
@@ -174,19 +174,21 @@ class BenchmarkRunner:
             vector_store.add(chunks)
 
             # Create retriever with vector store
-            retriever = DenseRetriever(vector_store=vector_store)
+            retriever = DenseRetriever(
+                vector_store=vector_store, embedding_model=dense_encoder.embedding_model
+            )
         elif method_name == "hybrid":
             # BM25 component
             bm25 = BM25Retriever()
             bm25.fit(chunks)
 
-            # Dense component
-            dense_model = DenseRetriever()
+            # Dense component - create encoder
+            dense_encoder = DenseRetriever()
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
 
             # Generate embeddings for all chunks
             texts = [chunk.text for chunk in chunks]
-            embeddings = dense_model.encode_batch(texts, batch_size=32)
+            embeddings = dense_encoder.encode_batch(texts, batch_size=32)
 
             # Add embeddings to chunks
             for chunk, embedding in zip(chunks, embeddings):
@@ -198,7 +200,9 @@ class BenchmarkRunner:
             vector_store.add(chunks)
 
             # Create dense retriever with vector store
-            dense = DenseRetriever(vector_store=vector_store)
+            dense = DenseRetriever(
+                vector_store=vector_store, embedding_model=dense_encoder.embedding_model
+            )
 
             # Create hybrid retriever
             retriever = HybridRetriever(bm25_retriever=bm25, dense_retriever=dense)
