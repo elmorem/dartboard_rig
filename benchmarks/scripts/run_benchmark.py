@@ -485,7 +485,14 @@ def main():
         "--dataset",
         type=str,
         required=True,
-        choices=["msmarco", "beir-scifact", "beir-nfcorpus", "beir-fiqa"],
+        choices=[
+            "msmarco",
+            "beir-scifact",
+            "beir-nfcorpus",
+            "beir-fiqa",
+            "beir-arguana",
+            "beir-climate-fever",
+        ],
         help="Dataset to evaluate on",
     )
 
