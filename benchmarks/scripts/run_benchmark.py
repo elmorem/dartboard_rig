@@ -27,6 +27,7 @@ from dartboard.retrieval.hybrid import HybridRetriever
 from dartboard.retrieval.base import Chunk
 from dartboard.evaluation.metrics import evaluate_batch
 from dartboard.evaluation.datasets import MSMARCOLoader, BEIRLoader
+from dartboard.storage.vector_store import FAISSStore
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -79,10 +80,24 @@ class BenchmarkRunner:
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}")
 
-        # Sample if requested
+        # Sample if requested - only sample queries that have relevance judgments
         if sample_size and sample_size < len(dataset.queries):
             logger.info(f"Sampling {sample_size} queries from {len(dataset.queries)}")
-            dataset.queries = dataset.queries[:sample_size]
+
+            # Get queries that have qrels
+            queries_with_qrels = {qrel.query_id for qrel in dataset.qrels}
+            filtered_queries = [
+                q for q in dataset.queries if q.id in queries_with_qrels
+            ]
+
+            if len(filtered_queries) < sample_size:
+                logger.warning(
+                    f"Only {len(filtered_queries)} queries have relevance judgments, "
+                    f"sampling all of them instead of {sample_size}"
+                )
+                dataset.queries = filtered_queries
+            else:
+                dataset.queries = filtered_queries[:sample_size]
 
             # Filter qrels to sampled queries
             sampled_query_ids = {q.id for q in dataset.queries}
@@ -141,11 +156,51 @@ class BenchmarkRunner:
             retriever = BM25Retriever()
             retriever.fit(chunks)
         elif method_name == "dense":
-            retriever = DenseRetriever()
+            # Create dense retriever and generate embeddings
+            dense = DenseRetriever()
+            logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+
+            # Generate embeddings for all chunks
+            texts = [chunk.text for chunk in chunks]
+            embeddings = dense.encode_batch(texts, batch_size=32)
+
+            # Add embeddings to chunks
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding
+
+            # Create FAISS vector store
+            logger.info("Building FAISS index...")
+            vector_store = FAISSStore(embedding_dim=embeddings.shape[1])
+            vector_store.add(chunks)
+
+            # Create retriever with vector store
+            retriever = DenseRetriever(vector_store=vector_store)
         elif method_name == "hybrid":
+            # BM25 component
             bm25 = BM25Retriever()
             bm25.fit(chunks)
-            dense = DenseRetriever()
+
+            # Dense component
+            dense_model = DenseRetriever()
+            logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+
+            # Generate embeddings for all chunks
+            texts = [chunk.text for chunk in chunks]
+            embeddings = dense_model.encode_batch(texts, batch_size=32)
+
+            # Add embeddings to chunks
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding
+
+            # Create FAISS vector store
+            logger.info("Building FAISS index...")
+            vector_store = FAISSStore(embedding_dim=embeddings.shape[1])
+            vector_store.add(chunks)
+
+            # Create dense retriever with vector store
+            dense = DenseRetriever(vector_store=vector_store)
+
+            # Create hybrid retriever
             retriever = HybridRetriever(bm25_retriever=bm25, dense_retriever=dense)
         else:
             raise ValueError(f"Unknown method: {method_name}")

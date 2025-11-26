@@ -239,63 +239,62 @@ class BenchmarkVisualizer:
         html_parts = []
 
         # Header
+        timestamp = reports[0]["timestamp"] if reports else "N/A"
         html_parts.append(
-            """
+            f"""
 <!DOCTYPE html>
 <html>
 <head>
     <title>Dartboard RAG - Benchmark Results</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
-        body {
+        body {{
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f5f5f5;
-        }
-        h1 {
+        }}
+        h1 {{
             color: #333;
             border-bottom: 3px solid #4CAF50;
             padding-bottom: 10px;
-        }
-        h2 {
+        }}
+        h2 {{
             color: #555;
             margin-top: 30px;
-        }
-        .dataset-section {
+        }}
+        .dataset-section {{
             background-color: white;
             padding: 20px;
             margin: 20px 0;
             border-radius: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        table {
+        }}
+        table {{
             border-collapse: collapse;
             width: 100%;
             margin: 20px 0;
-        }
-        th, td {
+        }}
+        th, td {{
             border: 1px solid #ddd;
             padding: 12px;
             text-align: left;
-        }
-        th {
+        }}
+        th {{
             background-color: #4CAF50;
             color: white;
-        }
-        tr:nth-child(even) {
+        }}
+        tr:nth-child(even) {{
             background-color: #f2f2f2;
-        }
-        .chart {
+        }}
+        .chart {{
             margin: 30px 0;
-        }
+        }}
     </style>
 </head>
 <body>
     <h1>🎯 Dartboard RAG - Benchmark Evaluation Results</h1>
     <p><strong>Generated:</strong> {timestamp}</p>
-""".format(
-                timestamp=reports[0]["timestamp"] if reports else "N/A"
-            )
+"""
         )
 
         # Process each report

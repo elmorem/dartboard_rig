@@ -11,6 +11,11 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 from dartboard.datasets.models import Chunk
 
+try:
+    import faiss
+except ImportError:
+    faiss = None
+
 
 class VectorStore(ABC):
     """Abstract base class for vector storage."""
@@ -64,7 +69,10 @@ class FAISSStore(VectorStore):
             embedding_dim: Dimension of embeddings
             persist_path: Optional path to save/load index
         """
-        import faiss
+        if faiss is None:
+            raise ImportError(
+                "faiss-cpu is required for FAISSStore. Install with: pip install faiss-cpu"
+            )
 
         self.embedding_dim = embedding_dim
         self.persist_path = persist_path
@@ -138,6 +146,60 @@ class FAISSStore(VectorStore):
                 results.append(chunk)
 
         return results
+
+    def similarity_search(
+        self,
+        query_embedding: np.ndarray,
+        k: int,
+        metric: str = "cosine",
+        filters: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """
+        Search FAISS index and return dict with chunks and scores.
+
+        Args:
+            query_embedding: Query vector
+            k: Number of results
+            metric: Similarity metric (currently only 'cosine' supported)
+            filters: Optional metadata filters
+
+        Returns:
+            Dict with 'chunks' and 'scores' keys
+        """
+        if len(self.chunks) == 0:
+            return {"chunks": [], "scores": []}
+
+        # Normalize query
+        query = query_embedding.reshape(1, -1).astype(np.float32)
+        import faiss
+
+        faiss.normalize_L2(query)
+
+        # Search
+        k = min(k, len(self.chunks))
+        scores, indices = self.index.search(query, k)
+
+        # Get chunks and scores
+        result_chunks = []
+        result_scores = []
+
+        for score, idx in zip(scores[0], indices[0]):
+            if idx < len(self.chunks):
+                chunk = self.chunks[idx]
+
+                # Apply filters if provided
+                if filters:
+                    match = all(
+                        chunk.metadata.get(key) == value
+                        for key, value in filters.items()
+                    )
+                    if not match:
+                        continue
+
+                result_chunks.append(chunk)
+                result_scores.append(float(score))
+
+        return {"chunks": result_chunks, "scores": result_scores}
 
     def delete(self, chunk_ids: List[str]) -> None:
         """Delete chunks (rebuild index without them)."""

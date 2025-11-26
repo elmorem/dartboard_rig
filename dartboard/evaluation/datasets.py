@@ -154,21 +154,52 @@ class MSMARCOLoader:
             logger.info("Loading from cache...")
             return self._load_from_cache(cache_file)
 
-        # Load queries
-        queries = self._load_queries("queries.dev.small.tsv")
-        logger.info(f"Loaded {len(queries)} queries")
+        # Check format: BEIR uses queries.jsonl, qrels/dev.tsv, corpus.jsonl
+        # Legacy format uses queries.dev.small.tsv, qrels.dev.small.tsv
+        beir_queries = self.data_dir / "queries.jsonl"
+        beir_qrels = self.data_dir / "qrels" / "dev.tsv"
+        beir_corpus = self.data_dir / "corpus.jsonl"
 
-        # Load qrels
-        qrels = self._load_qrels("qrels.dev.small.tsv")
-        logger.info(f"Loaded {len(qrels)} relevance judgments")
+        if beir_queries.exists() and beir_qrels.exists():
+            # BEIR format
+            queries = self._load_queries_jsonl("queries.jsonl")
+            logger.info(f"Loaded {len(queries)} queries (BEIR format)")
 
-        # Get unique doc IDs from qrels
-        relevant_doc_ids = {qrel.doc_id for qrel in qrels}
+            qrels = self._load_qrels("qrels/dev.tsv")
+            logger.info(f"Loaded {len(qrels)} relevance judgments")
 
-        # Load only relevant documents (much faster than loading all 8.8M)
-        documents = self._load_documents(
-            "collection.tsv", doc_ids=relevant_doc_ids, max_docs=max_docs
-        )
+            relevant_doc_ids = {qrel.doc_id for qrel in qrels}
+            documents = self._load_documents(
+                "corpus.jsonl", doc_ids=relevant_doc_ids, max_docs=max_docs
+            )
+        else:
+            # Legacy TSV format
+            queries = self._load_queries("queries.dev.small.tsv")
+            logger.info(f"Loaded {len(queries)} queries (TSV format)")
+
+            qrels = self._load_qrels("qrels.dev.small.tsv")
+            logger.info(f"Loaded {len(qrels)} relevance judgments")
+
+            relevant_doc_ids = {qrel.doc_id for qrel in qrels}
+
+            # Try various document file formats
+            if (self.data_dir / "passages.jsonl").exists():
+                documents = self._load_documents(
+                    "passages.jsonl", doc_ids=relevant_doc_ids, max_docs=max_docs
+                )
+            elif (self.data_dir / "collection.tsv").exists():
+                documents = self._load_documents(
+                    "collection.tsv", doc_ids=relevant_doc_ids, max_docs=max_docs
+                )
+            elif (self.data_dir / "corpus.jsonl").exists():
+                documents = self._load_documents(
+                    "corpus.jsonl", doc_ids=relevant_doc_ids, max_docs=max_docs
+                )
+            else:
+                raise FileNotFoundError(
+                    "Could not find documents file in data directory"
+                )
+
         logger.info(f"Loaded {len(documents)} documents")
 
         dataset = EvaluationDataset(
@@ -202,6 +233,26 @@ class MSMARCOLoader:
 
         return queries
 
+    def _load_queries_jsonl(self, filename: str) -> List[Query]:
+        """Load queries from JSONL file (BEIR format)."""
+        import json
+
+        queries = []
+        filepath = self.data_dir / filename
+
+        if not filepath.exists():
+            raise FileNotFoundError(f"Queries file not found: {filepath}")
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                query_data = json.loads(line.strip())
+                query_id = query_data["_id"]
+                query_text = query_data["text"]
+                metadata = query_data.get("metadata", {})
+                queries.append(Query(id=query_id, text=query_text, metadata=metadata))
+
+        return queries
+
     def _load_qrels(self, filename: str) -> List[QRel]:
         """Load query-document relevance judgments from TSV file."""
         qrels = []
@@ -211,9 +262,21 @@ class MSMARCOLoader:
             raise FileNotFoundError(f"Qrels file not found: {filepath}")
 
         with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
+            for i, line in enumerate(f):
                 parts = line.strip().split("\t")
-                if len(parts) >= 4:
+
+                # Skip header row if present (BEIR format)
+                if i == 0 and parts[0] == "query-id":
+                    continue
+
+                if len(parts) >= 3:
+                    # BEIR format: query-id, corpus-id, score (3 columns)
+                    query_id, doc_id, relevance = parts[0], parts[1], parts[2]
+                    qrels.append(
+                        QRel(query_id=query_id, doc_id=doc_id, relevance=int(relevance))
+                    )
+                elif len(parts) >= 4:
+                    # Traditional format: query-id, 0, doc-id, relevance (4 columns)
                     query_id, _, doc_id, relevance = parts
                     qrels.append(
                         QRel(query_id=query_id, doc_id=doc_id, relevance=int(relevance))
@@ -228,37 +291,53 @@ class MSMARCOLoader:
         max_docs: int = None,
     ) -> List[Document]:
         """
-        Load documents from TSV file.
+        Load documents from TSV or JSONL file.
 
         Args:
-            filename: Document file name
+            filename: Document file name (TSV or JSONL)
             doc_ids: Only load documents with these IDs (for efficiency)
             max_docs: Maximum number of documents to load
 
         Returns:
             List of Document objects
         """
+        import json
+
         documents = []
         filepath = self.data_dir / filename
 
         if not filepath.exists():
             raise FileNotFoundError(f"Documents file not found: {filepath}")
 
+        # Check file format
+        is_jsonl = filename.endswith(".jsonl")
+
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split("\t")
-                if len(parts) >= 2:
-                    doc_id, doc_text = parts[0], parts[1]
-
-                    # Skip if not in requested doc_ids
-                    if doc_ids and doc_id not in doc_ids:
+                if is_jsonl:
+                    # JSONL format
+                    doc = json.loads(line.strip())
+                    # BEIR uses '_id', others use 'id'
+                    doc_id = doc.get("_id", doc.get("id"))
+                    doc_text = doc["text"]
+                    doc_title = doc.get("title", "")
+                else:
+                    # TSV format
+                    parts = line.strip().split("\t")
+                    if len(parts) < 2:
                         continue
+                    doc_id, doc_text = parts[0], parts[1]
+                    doc_title = ""
 
-                    documents.append(Document(id=doc_id, text=doc_text))
+                # Skip if not in requested doc_ids
+                if doc_ids and doc_id not in doc_ids:
+                    continue
 
-                    # Check max_docs limit
-                    if max_docs and len(documents) >= max_docs:
-                        break
+                documents.append(Document(id=doc_id, text=doc_text, title=doc_title))
+
+                # Check max_docs limit
+                if max_docs and len(documents) >= max_docs:
+                    break
 
         return documents
 
@@ -518,29 +597,31 @@ class BEIRLoader:
 
 def download_msmarco(data_dir: str = "data/msmarco"):
     """
-    Download MS MARCO dev.small dataset.
+    Download MS MARCO dataset using BEIR library.
 
     Downloads:
-    - queries.dev.small.tsv
-    - qrels.dev.small.tsv
-    - collection.tsv (warning: 8.8M passages, ~3GB)
+    - corpus.jsonl (passages)
+    - queries.jsonl
+    - qrels/dev.tsv
 
     Args:
         data_dir: Directory to save files
     """
-    from datasets import load_dataset
+    from beir import util
+    from beir.datasets.data_loader import GenericDataLoader
 
-    logger.info("Downloading MS MARCO dataset...")
+    logger.info("Downloading MS MARCO dataset via BEIR...")
     data_path = Path(data_dir)
-    data_path.mkdir(parents=True, exist_ok=True)
 
-    # Load from HuggingFace datasets
-    dataset = load_dataset("ms_marco", "v1.1", split="validation")
-
-    logger.info(f"MS MARCO dataset downloaded to {data_dir}")
-    logger.info(
-        "Note: For full usage, you may need to download collection.tsv separately"
+    # Download MS MARCO using BEIR's utility
+    url = (
+        "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/msmarco.zip"
     )
+    util.download_and_unzip(url, str(data_path.parent))
+
+    # The BEIR download creates a "msmarco" folder with standard structure
+    logger.info(f"✅ MS MARCO dataset downloaded to {data_dir}")
+    logger.info("  Files: corpus.jsonl, queries.jsonl, qrels/train.tsv, qrels/dev.tsv")
 
 
 def download_beir(dataset_name: str, data_dir: str = "data/beir"):
