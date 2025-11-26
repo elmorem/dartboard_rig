@@ -367,3 +367,169 @@ def evaluate_batch(
     )
 
     return avg_metrics
+
+
+def pairwise_cosine_diversity(embeddings: np.ndarray) -> float:
+    """
+    Calculate average pairwise cosine distance (1 - similarity) between result embeddings.
+
+    Higher values = more diverse results.
+
+    Args:
+        embeddings: (N, D) array of result embeddings
+
+    Returns:
+        Average pairwise cosine distance (0.0 to 1.0)
+    """
+    if len(embeddings) < 2:
+        return 0.0
+
+    # Normalize embeddings
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    normalized = embeddings / (norms + 1e-8)
+
+    # Compute pairwise cosine similarities
+    similarities = np.dot(normalized, normalized.T)
+
+    # Get upper triangle (excluding diagonal) for pairwise distances
+    n = len(embeddings)
+    distances = 1.0 - similarities
+
+    # Average of upper triangle
+    upper_triangle_indices = np.triu_indices(n, k=1)
+    avg_distance = np.mean(distances[upper_triangle_indices])
+
+    return float(avg_distance)
+
+
+def intra_list_diversity(
+    results: List[str], embeddings_dict: Dict[str, np.ndarray]
+) -> float:
+    """
+    Calculate Intra-List Diversity (ILD) - average dissimilarity between all pairs.
+
+    ILD = (1 / (|R| * (|R| - 1))) * sum_{i,j in R, i!=j} dissimilarity(i, j)
+
+    Args:
+        results: List of retrieved document IDs
+        embeddings_dict: Dict mapping doc_id to embedding vector
+
+    Returns:
+        ILD score (0.0 to 1.0, higher = more diverse)
+    """
+    if len(results) < 2:
+        return 0.0
+
+    # Get embeddings for results
+    result_embeddings = []
+    for doc_id in results:
+        if doc_id in embeddings_dict:
+            result_embeddings.append(embeddings_dict[doc_id])
+
+    if len(result_embeddings) < 2:
+        return 0.0
+
+    embeddings = np.array(result_embeddings)
+    return pairwise_cosine_diversity(embeddings)
+
+
+def subtopic_coverage(results: List[str], doc_subtopics: Dict[str, Set[str]]) -> float:
+    """
+    Calculate coverage of different subtopics in results.
+
+    Measures how many unique subtopics are covered by the result set.
+
+    Args:
+        results: List of retrieved document IDs
+        doc_subtopics: Dict mapping doc_id to set of subtopic labels
+
+    Returns:
+        Fraction of unique subtopics covered (0.0 to 1.0)
+    """
+    if not results or not doc_subtopics:
+        return 0.0
+
+    # Get all possible subtopics
+    all_subtopics = set()
+    for subtopics in doc_subtopics.values():
+        all_subtopics.update(subtopics)
+
+    if not all_subtopics:
+        return 0.0
+
+    # Get subtopics covered by results
+    covered_subtopics = set()
+    for doc_id in results:
+        if doc_id in doc_subtopics:
+            covered_subtopics.update(doc_subtopics[doc_id])
+
+    return len(covered_subtopics) / len(all_subtopics)
+
+
+def alpha_ndcg(
+    results: List[str],
+    relevant_docs: Set[str],
+    embeddings_dict: Dict[str, np.ndarray],
+    k: int = 10,
+    alpha: float = 0.5,
+) -> float:
+    """
+    Calculate alpha-NDCG which balances relevance and diversity.
+
+    α-NDCG penalizes redundant documents (similar to already-seen docs).
+
+    Args:
+        results: List of retrieved document IDs
+        relevant_docs: Set of relevant document IDs
+        embeddings_dict: Dict mapping doc_id to embedding
+        k: Cutoff rank
+        alpha: Diversity weight (0 = pure relevance, 1 = pure diversity)
+
+    Returns:
+        α-NDCG score (0.0 to 1.0)
+    """
+    if not results or not relevant_docs:
+        return 0.0
+
+    top_k = results[:k]
+
+    # Calculate α-DCG
+    dcg = 0.0
+    seen_embeddings = []
+
+    for rank, doc_id in enumerate(top_k, 1):
+        # Relevance gain
+        rel = 1.0 if doc_id in relevant_docs else 0.0
+
+        # Diversity penalty (novelty with respect to seen docs)
+        novelty = 1.0
+        if seen_embeddings and doc_id in embeddings_dict:
+            current_emb = embeddings_dict[doc_id]
+            # Compute max similarity to any seen doc
+            max_sim = 0.0
+            for seen_emb in seen_embeddings:
+                sim = np.dot(current_emb, seen_emb) / (
+                    np.linalg.norm(current_emb) * np.linalg.norm(seen_emb) + 1e-8
+                )
+                max_sim = max(max_sim, sim)
+            novelty = 1.0 - max_sim
+
+        # Combined gain
+        gain = rel * (alpha + (1 - alpha) * novelty)
+        dcg += gain / np.log2(rank + 1)
+
+        # Track seen embeddings
+        if doc_id in embeddings_dict:
+            seen_embeddings.append(embeddings_dict[doc_id])
+
+    # Calculate ideal α-DCG
+    ideal_dcg = 0.0
+    for rank in range(1, min(len(relevant_docs) + 1, k + 1)):
+        # In ideal case, all docs are relevant and maximally diverse
+        gain = 1.0  # Pure relevance
+        ideal_dcg += gain / np.log2(rank + 1)
+
+    if ideal_dcg == 0.0:
+        return 0.0
+
+    return dcg / ideal_dcg

@@ -25,11 +25,16 @@ from dartboard.retrieval.bm25 import BM25Retriever
 from dartboard.retrieval.dense import DenseRetriever
 from dartboard.retrieval.hybrid import HybridRetriever
 from dartboard.retrieval.base import Chunk
-from dartboard.evaluation.metrics import evaluate_batch
+from dartboard.evaluation.metrics import (
+    evaluate_batch,
+    intra_list_diversity,
+    alpha_ndcg,
+)
 from dartboard.evaluation.datasets import MSMARCOLoader, BEIRLoader
 from dartboard.storage.vector_store import FAISSStore
 from dartboard.core import DartboardRetriever, DartboardConfig
 from dartboard.embeddings import SentenceTransformerModel
+import numpy as np
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -138,7 +143,7 @@ class BenchmarkRunner:
 
     def run_method(
         self, method_name: str, queries: List, chunks: List[Chunk], k: int = 10
-    ) -> List[List[str]]:
+    ) -> tuple[List[List[str]], Dict[str, np.ndarray]]:
         """
         Run a single retrieval method on all queries.
 
@@ -149,7 +154,9 @@ class BenchmarkRunner:
             k: Number of results to retrieve
 
         Returns:
-            List of result lists (doc IDs for each query)
+            Tuple of (results, embeddings_dict) where:
+            - results: List of result lists (doc IDs for each query)
+            - embeddings_dict: Dict mapping chunk_id -> embedding vector
         """
         logger.info(f"Running {method_name} retrieval...")
 
@@ -257,22 +264,32 @@ class BenchmarkRunner:
             f"(avg: {avg_latency:.1f}ms/query)"
         )
 
-        return all_results
+        # Build embeddings dict for diversity metrics
+        embeddings_dict = {}
+        for chunk in chunks:
+            if hasattr(chunk, "embedding") and chunk.embedding is not None:
+                embeddings_dict[chunk.id] = chunk.embedding
+
+        logger.info(f"Collected {len(embeddings_dict)} chunk embeddings")
+
+        return all_results, embeddings_dict
 
     def evaluate_results(
         self,
         method_name: str,
         results: List[List[str]],
         dataset,
+        embeddings_dict: Dict[str, np.ndarray],
         k_values: List[int] = [1, 5, 10, 20, 100],
     ) -> Dict[str, float]:
         """
-        Evaluate retrieval results using standard metrics.
+        Evaluate retrieval results using standard metrics and diversity metrics.
 
         Args:
             method_name: Method identifier
             results: Retrieved doc IDs for each query
             dataset: Dataset with ground truth
+            embeddings_dict: Dict mapping chunk_id -> embedding
             k_values: K values for metrics
 
         Returns:
@@ -286,8 +303,35 @@ class BenchmarkRunner:
             relevant = dataset.get_relevant_docs(query.id, min_relevance=1)
             all_relevant_docs.append(relevant)
 
-        # Compute metrics
+        # Compute standard metrics
         metrics = evaluate_batch(results, all_relevant_docs, k_values=k_values)
+
+        # Compute diversity metrics if embeddings are available
+        if embeddings_dict:
+            logger.info(f"Computing diversity metrics for {method_name}...")
+
+            # ILD (Intra-List Diversity) - averaged across all queries
+            ild_scores = []
+            for result_list in results:
+                ild = intra_list_diversity(result_list, embeddings_dict)
+                ild_scores.append(ild)
+            metrics["ILD"] = np.mean(ild_scores)
+
+            # Alpha-NDCG@10 - balanced relevance + diversity
+            alpha_ndcg_scores = []
+            for result_list, relevant_docs in zip(results, all_relevant_docs):
+                a_ndcg = alpha_ndcg(
+                    result_list,
+                    relevant_docs,
+                    embeddings_dict,
+                    k=10,
+                    alpha=0.5,  # Equal weight to relevance and diversity
+                )
+                alpha_ndcg_scores.append(a_ndcg)
+            metrics["Alpha-NDCG@10"] = np.mean(alpha_ndcg_scores)
+
+            logger.info(f"  ILD: {metrics['ILD']:.4f}")
+            logger.info(f"  Alpha-NDCG@10: {metrics['Alpha-NDCG@10']:.4f}")
 
         logger.info(f"{method_name} evaluation complete")
         for metric, value in sorted(metrics.items()):
@@ -332,11 +376,13 @@ class BenchmarkRunner:
         for method in methods:
             try:
                 # Retrieve
-                results = self.run_method(method, dataset.queries, chunks, k=k)
+                results, embeddings_dict = self.run_method(
+                    method, dataset.queries, chunks, k=k
+                )
 
                 # Evaluate
                 metrics = self.evaluate_results(
-                    method, results, dataset, k_values=k_values
+                    method, results, dataset, embeddings_dict, k_values=k_values
                 )
 
                 all_results[method] = results
