@@ -28,6 +28,8 @@ from dartboard.retrieval.base import Chunk
 from dartboard.evaluation.metrics import evaluate_batch
 from dartboard.evaluation.datasets import MSMARCOLoader, BEIRLoader
 from dartboard.storage.vector_store import FAISSStore
+from dartboard.core import DartboardRetriever, DartboardConfig
+from dartboard.embeddings import SentenceTransformerModel
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -206,6 +208,26 @@ class BenchmarkRunner:
 
             # Create hybrid retriever
             retriever = HybridRetriever(bm25_retriever=bm25, dense_retriever=dense)
+        elif method_name == "dartboard":
+            # Create embedding model wrapper
+            embedding_model = SentenceTransformerModel()
+            logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+
+            # Generate embeddings for all chunks
+            texts = [chunk.text for chunk in chunks]
+            embeddings = embedding_model.encode(texts, batch_size=32)
+
+            # Add embeddings to chunks
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding
+
+            # Create Dartboard config and retriever
+            config = DartboardConfig(
+                sigma=1.0, top_k=k, triage_k=100, reranker_type="cosine"
+            )
+            retriever = DartboardRetriever(
+                config=config, embedding_model=embedding_model
+            )
         else:
             raise ValueError(f"Unknown method: {method_name}")
 
@@ -219,7 +241,11 @@ class BenchmarkRunner:
                 qps = (i + 1) / elapsed
                 logger.info(f"Processed {i + 1}/{len(queries)} queries ({qps:.1f} q/s)")
 
-            result = retriever.retrieve(query.text, k=k)
+            # Dartboard has a different retrieve signature
+            if method_name == "dartboard":
+                result = retriever.retrieve(query.text, corpus=chunks)
+            else:
+                result = retriever.retrieve(query.text, k=k)
             doc_ids = [chunk.id for chunk in result.chunks]
             all_results.append(doc_ids)
 

@@ -233,7 +233,7 @@ def main():
     )
 
     # Search button
-    if st.button("🚀 Compare Methods", type="primary", use_container_width=True):
+    if st.button("🚀 Compare Methods", type="primary", width="stretch"):
         if not query.strip():
             st.warning("⚠️ Please enter a query")
         elif not selected_methods:
@@ -318,7 +318,7 @@ def main():
         with tab2:
             st.subheader("Score Distributions")
             fig_scores = create_score_distribution_chart(results)
-            st.plotly_chart(fig_scores, use_container_width=True)
+            st.plotly_chart(fig_scores, width="stretch")
 
             # Detailed metrics table
             st.subheader("Detailed Metrics")
@@ -348,7 +348,7 @@ def main():
                 )
 
             df = pd.DataFrame(metrics_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
 
         with tab3:
             st.subheader("Result Overlap Analysis")
@@ -356,7 +356,7 @@ def main():
             overlap_matrix = response["comparison_metrics"].get("overlap", {})
             if overlap_matrix:
                 fig_heatmap = create_overlap_heatmap(overlap_matrix)
-                st.plotly_chart(fig_heatmap, use_container_width=True)
+                st.plotly_chart(fig_heatmap, width="stretch")
 
                 # Detailed overlap table
                 st.subheader("Overlap Details")
@@ -371,7 +371,7 @@ def main():
                     )
 
                 df_overlap = pd.DataFrame(overlap_data)
-                st.dataframe(df_overlap, use_container_width=True, hide_index=True)
+                st.dataframe(df_overlap, width="stretch", hide_index=True)
             else:
                 st.info("Overlap analysis requires at least 2 methods")
 
@@ -385,7 +385,7 @@ def main():
             st.subheader("Performance Comparison")
 
             fig_latency = create_latency_chart(results)
-            st.plotly_chart(fig_latency, use_container_width=True)
+            st.plotly_chart(fig_latency, width="stretch")
 
             # Performance insights
             st.subheader("Performance Insights")
