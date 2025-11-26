@@ -1,7 +1,5 @@
 """
-Download BEIR datasets for benchmarking.
-
-This script downloads BEIR datasets and organizes them in the expected format.
+Download BEIR datasets using direct Python approach.
 """
 
 import argparse
@@ -16,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def download_beir_dataset(dataset_name: str, data_dir: str = "benchmarks/data/beir"):
     """
-    Download a BEIR dataset using direct download approach.
+    Download a BEIR dataset.
 
     Args:
         dataset_name: Name of the dataset (e.g., 'arguana', 'scifact', 'climate-fever')
@@ -39,7 +37,7 @@ def download_beir_dataset(dataset_name: str, data_dir: str = "benchmarks/data/be
         logger.info(f"Dataset downloaded to: {dataset_path}")
 
         # Load to verify
-        corpus, queries, qrels = GenericDataLoader(data_folder=dataset_path).load(
+        corpus, queries, qrels = GenericDataLoader(data_folder=str(data_path)).load(
             split="test"
         )
 
