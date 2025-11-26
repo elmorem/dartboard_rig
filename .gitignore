@@ -49,6 +49,11 @@ coverage.xml
 *.cover
 .hypothesis/
 
+# Benchmarks
+benchmarks/data/
+benchmarks/results/*.json
+benchmarks/results/*.html
+
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
