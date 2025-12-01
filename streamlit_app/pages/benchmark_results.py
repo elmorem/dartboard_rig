@@ -12,6 +12,173 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Any
 
+
+def get_metric_explanation(metric_name: str) -> str:
+    """
+    Return detailed explanation for a given metric.
+
+    Args:
+        metric_name: Name of the metric (e.g., "MRR@100", "NDCG@10", "ILD")
+
+    Returns:
+        Markdown-formatted explanation string
+    """
+    # Extract base metric name (remove @K suffix)
+    base_metric = metric_name.split("@")[0]
+
+    explanations = {
+        "MRR": """
+**Mean Reciprocal Rank (MRR@K)**
+
+Measures how quickly a relevant document appears in the ranked results.
+
+**Formula:** MRR = 1 / rank of first relevant document
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Example:**
+- If the first relevant doc is at position 1: MRR = 1.0
+- If the first relevant doc is at position 2: MRR = 0.5
+- If the first relevant doc is at position 10: MRR = 0.1
+
+**Use Case:** Important for question answering and search where users typically look at only the top few results.
+""",
+        "MAP": """
+**Mean Average Precision (MAP@K)**
+
+Measures both precision and the ranking quality of relevant documents.
+
+**Formula:** Average of precision values at positions where relevant documents appear
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Example:** If relevant docs appear at positions 1, 3, and 5:
+- Precision@1 = 1/1 = 1.0
+- Precision@3 = 2/3 = 0.667
+- Precision@5 = 3/5 = 0.6
+- MAP = (1.0 + 0.667 + 0.6) / 3 = 0.756
+
+**Use Case:** Excellent for evaluating systems where multiple relevant documents exist and their ranking matters.
+""",
+        "NDCG": """
+**Normalized Discounted Cumulative Gain (NDCG@K)**
+
+Measures ranking quality with position-based discounting - relevant docs ranked higher are more valuable.
+
+**Formula:** DCG / Ideal DCG, where DCG = Σ (relevance / log₂(position + 1))
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Key Insight:** Documents appearing earlier in the ranking contribute more to the score due to logarithmic discounting.
+
+**Example:**
+- Relevant doc at position 1: gain = 1.0 / log₂(2) = 1.0
+- Relevant doc at position 2: gain = 1.0 / log₂(3) = 0.631
+- Relevant doc at position 10: gain = 1.0 / log₂(11) = 0.289
+
+**Use Case:** Industry standard for evaluating search engines and recommender systems.
+""",
+        "Recall": """
+**Recall@K**
+
+Measures what fraction of all relevant documents were retrieved in the top-K results.
+
+**Formula:** Recall@K = (# relevant docs in top-K) / (total # relevant docs)
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Example:** If there are 10 relevant docs total and 7 appear in top-K:
+- Recall@K = 7/10 = 0.7
+
+**Trade-off:** Higher K typically increases recall but may decrease precision.
+
+**Use Case:** Important when you need to ensure all relevant information is retrieved (e.g., medical literature search, legal discovery).
+""",
+        "Precision": """
+**Precision@K**
+
+Measures what fraction of the top-K retrieved documents are actually relevant.
+
+**Formula:** Precision@K = (# relevant docs in top-K) / K
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Example:** If top-10 results contain 7 relevant documents:
+- Precision@10 = 7/10 = 0.7
+
+**Trade-off:** Precision and recall have an inverse relationship - improving one often decreases the other.
+
+**Use Case:** Critical when showing irrelevant results is costly (e.g., spam detection, high-stakes decision making).
+""",
+        "ILD": """
+**Intra-List Diversity (ILD)**
+
+Measures how diverse (dissimilar) the retrieved documents are from each other.
+
+**Formula:** Average pairwise cosine distance between all document embeddings in results
+
+**Range:** 0.0 to 1.0 (higher = more diverse)
+
+**Calculation:** ILD = (1 / (|R| × (|R|-1))) × Σ dissimilarity(docᵢ, docⱼ)
+
+**Why It Matters:** High relevance but low diversity means redundant results - different docs saying the same thing.
+
+**Example:**
+- All documents about the same subtopic: ILD ≈ 0.2
+- Documents covering different aspects: ILD ≈ 0.6-0.8
+
+**Use Case:** Important for exploratory search, news aggregation, and recommendation systems where variety matters.
+""",
+        "Alpha-NDCG": """
+**Alpha-NDCG@10**
+
+Balances relevance and diversity by penalizing redundant documents similar to already-seen results.
+
+**Formula:** Modified NDCG where gain = relevance × (α + (1-α) × novelty)
+
+**Parameters:**
+- α = 0.5: Equal weight to relevance and diversity
+- α = 0.0: Pure diversity (novelty only)
+- α = 1.0: Pure relevance (standard NDCG)
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Novelty Calculation:** 1 - max_similarity to previously seen documents
+
+**Use Case:** Ideal for comparing retrieval systems on their ability to provide both relevant AND diverse results. Used in research on diversity-aware ranking.
+""",
+        "AP": """
+**Average Precision (AP)**
+
+Similar to MAP but for a single query - measures precision at each relevant document position.
+
+**Formula:** (1 / # relevant docs) × Σ (Precision@i × is_relevant_i)
+
+**Range:** 0.0 to 1.0 (higher is better)
+
+**Use Case:** Building block for calculating MAP across multiple queries.
+""",
+    }
+
+    return explanations.get(base_metric, f"No explanation available for {metric_name}")
+
+
+def render_metric_with_help(metric_name: str, col_width: str = "90%"):
+    """
+    Render a metric name with a help popover icon.
+
+    Args:
+        metric_name: Name of the metric
+        col_width: Width of the metric name column (remaining space for popover)
+    """
+    col1, col2 = st.columns([col_width, f"{100 - int(col_width.rstrip('%'))}%"])
+    with col1:
+        st.write(metric_name)
+    with col2:
+        with st.popover("ℹ️"):
+            st.markdown(get_metric_explanation(metric_name))
+
+
 # Page configuration
 st.set_page_config(
     page_title="Benchmark Results - Dartboard RAG",
@@ -257,8 +424,41 @@ def main():
     with tab1:
         st.subheader("Summary Metrics")
 
+        # Add explanation expander
+        with st.expander("📖 Learn About Metrics"):
+            st.markdown(
+                """
+            Click the **ℹ️ icons** next to each metric name below to learn:
+            - What the metric measures
+            - How it's calculated
+            - When to use it
+            - Example interpretations
+
+            **Quick Overview:**
+            - **MRR**: How quickly you find the first relevant result
+            - **MAP**: Quality of ranking across all relevant results
+            - **NDCG**: Ranking quality with position discounting
+            - **Recall**: What % of relevant docs were found
+            - **Precision**: What % of results are relevant
+            - **ILD**: How diverse (non-redundant) results are
+            - **Alpha-NDCG**: Balance of relevance AND diversity
+            """
+            )
+
         # Create summary table
         df = create_summary_table(report)
+
+        # Display metric headers with help icons
+        st.markdown("##### Metric Definitions")
+        metric_cols = [col for col in df.columns if col != "Method"]
+        cols = st.columns(len(metric_cols))
+
+        for i, metric in enumerate(metric_cols):
+            with cols[i]:
+                with st.popover(f"**{metric}** ℹ️"):
+                    st.markdown(get_metric_explanation(metric))
+
+        st.divider()
 
         # Style the dataframe
         st.dataframe(
@@ -287,11 +487,17 @@ def main():
                             best_method = method
 
                 if best_method:
-                    st.metric(
-                        metric,
-                        f"{best_method.upper()}",
-                        f"{best_value:.4f}",
-                    )
+                    # Display metric with popover
+                    metric_col, popover_col = st.columns([0.85, 0.15])
+                    with metric_col:
+                        st.metric(
+                            metric,
+                            f"{best_method.upper()}",
+                            f"{best_value:.4f}",
+                        )
+                    with popover_col:
+                        with st.popover("ℹ️"):
+                            st.markdown(get_metric_explanation(metric))
 
     with tab2:
         st.subheader("Performance Charts")
