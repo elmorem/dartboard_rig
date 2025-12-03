@@ -62,15 +62,94 @@ class BenchmarkRunner:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
+    def sample_corpus_with_coverage(self, dataset, max_corpus_docs: int = 50000):
+        """
+        Sample corpus to reduce memory usage while preserving evaluation validity.
+
+        Strategy:
+        1. Keep ALL documents that are relevant to test queries (mandatory for recall)
+        2. Random sample remaining documents to fill quota
+        3. This preserves recall@K metrics while reducing corpus size
+
+        Args:
+            dataset: Dataset with documents, queries, qrels
+            max_corpus_docs: Maximum number of documents to keep
+
+        Returns:
+            Modified dataset with sampled corpus
+        """
+        import random
+
+        if len(dataset.documents) <= max_corpus_docs:
+            logger.info(
+                f"Corpus size {len(dataset.documents)} <= {max_corpus_docs}, no sampling needed"
+            )
+            return dataset
+
+        logger.warning(
+            f"Corpus has {len(dataset.documents):,} docs, "
+            f"sampling to {max_corpus_docs:,} for memory efficiency"
+        )
+
+        # Get all relevant doc IDs from qrels
+        relevant_doc_ids = set()
+        for qrel in dataset.qrels:
+            relevant_doc_ids.add(qrel.doc_id)
+
+        logger.info(f"Found {len(relevant_doc_ids)} relevant documents in qrels")
+
+        # Separate relevant and non-relevant docs
+        relevant_docs = []
+        non_relevant_docs = []
+
+        for doc in dataset.documents:
+            if doc.id in relevant_doc_ids:
+                relevant_docs.append(doc)
+            else:
+                non_relevant_docs.append(doc)
+
+        logger.info(f"Relevant docs: {len(relevant_docs):,}")
+        logger.info(f"Non-relevant docs: {len(non_relevant_docs):,}")
+
+        # Sample non-relevant docs to reach target size
+        remaining_quota = max_corpus_docs - len(relevant_docs)
+
+        if remaining_quota <= 0:
+            logger.warning(
+                f"Relevant docs ({len(relevant_docs)}) exceed quota ({max_corpus_docs}), "
+                f"keeping only relevant docs"
+            )
+            dataset.documents = relevant_docs
+        elif len(non_relevant_docs) > remaining_quota:
+            logger.info(f"Sampling {remaining_quota:,} non-relevant docs")
+            sampled_non_relevant = random.sample(non_relevant_docs, remaining_quota)
+            dataset.documents = relevant_docs + sampled_non_relevant
+            random.shuffle(dataset.documents)  # Mix them up
+        else:
+            # All non-relevant docs fit within quota
+            dataset.documents = relevant_docs + non_relevant_docs
+            random.shuffle(dataset.documents)
+
+        logger.info(f"Final corpus size: {len(dataset.documents):,} documents")
+        logger.info(
+            f"Corpus reduction: {len(dataset.documents) / (len(relevant_docs) + len(non_relevant_docs)):.1%} of original"
+        )
+
+        return dataset
+
     def load_dataset(
-        self, dataset_name: str, sample_size: Optional[int] = None
+        self,
+        dataset_name: str,
+        sample_size: Optional[int] = None,
+        max_corpus_docs: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Load evaluation dataset.
+        Load evaluation dataset with optional query and corpus sampling.
 
         Args:
             dataset_name: Dataset identifier (e.g., 'msmarco', 'beir-scifact')
-            sample_size: Optional sample size for faster testing
+            sample_size: Optional query sample size for faster testing
+            max_corpus_docs: Optional max corpus size for memory efficiency
 
         Returns:
             Dict with queries, documents, and qrels
@@ -87,7 +166,7 @@ class BenchmarkRunner:
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}")
 
-        # Sample if requested - only sample queries that have relevance judgments
+        # Sample queries if requested - only sample queries that have relevance judgments
         if sample_size and sample_size < len(dataset.queries):
             logger.info(f"Sampling {sample_size} queries from {len(dataset.queries)}")
 
@@ -111,6 +190,10 @@ class BenchmarkRunner:
             dataset.qrels = [
                 qrel for qrel in dataset.qrels if qrel.query_id in sampled_query_ids
             ]
+
+        # Sample corpus for large datasets
+        if max_corpus_docs is not None:
+            dataset = self.sample_corpus_with_coverage(dataset, max_corpus_docs)
 
         logger.info(
             f"Dataset loaded: {len(dataset.queries)} queries, "
@@ -344,6 +427,7 @@ class BenchmarkRunner:
         dataset_name: str,
         methods: List[str],
         sample_size: Optional[int] = None,
+        max_corpus_docs: Optional[int] = None,
         k: int = 10,
         k_values: List[int] = [1, 5, 10, 20, 100],
     ) -> Dict[str, Any]:
@@ -353,7 +437,8 @@ class BenchmarkRunner:
         Args:
             dataset_name: Dataset to evaluate on
             methods: List of method names to compare
-            sample_size: Optional sample size for testing
+            sample_size: Optional query sample size for testing
+            max_corpus_docs: Optional max corpus size for memory efficiency
             k: Number of results to retrieve
             k_values: K values for evaluation metrics
 
@@ -365,8 +450,10 @@ class BenchmarkRunner:
         logger.info(f"Methods: {methods}")
         logger.info("=" * 80)
 
-        # Load dataset
-        dataset = self.load_dataset(dataset_name, sample_size=sample_size)
+        # Load dataset with optional corpus sampling
+        dataset = self.load_dataset(
+            dataset_name, sample_size=sample_size, max_corpus_docs=max_corpus_docs
+        )
         chunks = self.prepare_corpus(dataset)
 
         # Run each method
@@ -509,6 +596,13 @@ def main():
     )
 
     parser.add_argument(
+        "--max-corpus-docs",
+        type=int,
+        default=None,
+        help="Max corpus size for memory efficiency (useful for large datasets like Climate-FEVER)",
+    )
+
+    parser.add_argument(
         "--k", type=int, default=10, help="Number of results to retrieve per query"
     )
 
@@ -535,6 +629,7 @@ def main():
         dataset_name=args.dataset,
         methods=args.methods,
         sample_size=args.sample,
+        max_corpus_docs=args.max_corpus_docs,
         k=args.k,
     )
 
