@@ -510,6 +510,43 @@ Effective chunking is essential for RAG performance. **Sentence-aware chunking w
 - ✅ Match chunk size to **embedding model limits** (typically 512 tokens)
 - ✅ **COMPLETE**: All chunkers implemented with comprehensive tests (31 passing)
 
+## Metadata Enrichment (NEW!)
+
+The chunking pipeline now supports automatic metadata enrichment:
+
+**Features:**
+
+- Extract section titles from Markdown headings
+- Build hierarchical heading paths (breadcrumbs)
+- Track page numbers for PDF documents
+- Maintain document structure and hierarchy
+
+**Usage:**
+
+```python
+from dartboard.ingestion.metadata_extractors import MetadataEnricher
+
+# Enrich chunks with metadata
+enricher = MetadataEnricher()
+enriched_metadata = enricher.enrich_markdown_chunk(
+    chunk_text=chunk.text,
+    chunk_start=position_in_document,
+    document_content=full_document,
+    base_metadata=chunk.metadata
+)
+
+# Result includes:
+# - section_title: Current section name
+# - heading_path: Full breadcrumb (e.g., "Intro > Background > Details")
+# - heading_level: Heading depth (1, 2, 3, etc.)
+```
+
+**Demo:**
+
+```bash
+python demo_metadata_enrichment.py
+```
+
 ## Testing
 
 Run chunking tests:
@@ -517,6 +554,9 @@ Run chunking tests:
 ```bash
 # All chunking tests
 pytest test_chunking.py test_embedding_semantic_chunking.py -v
+
+# Metadata enrichment tests
+pytest test_metadata_extraction.py -v
 
 # Integration demo
 python demo_chunking_endtoend.py
@@ -526,5 +566,6 @@ python demo_chunking_endtoend.py
 
 - 18 tests for RecursiveChunker/SentenceChunker
 - 13 tests for EmbeddingSemanticChunker
+- 17 tests for metadata enrichment (NEW!)
 - Edge cases: empty documents, single sentences, code blocks
 - Metadata preservation and token counting

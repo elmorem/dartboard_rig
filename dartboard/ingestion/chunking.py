@@ -46,14 +46,19 @@ class Chunk:
 
 
 class TokenCounter:
-    """Utility for counting tokens using tiktoken."""
+    """
+    Utility for counting tokens using tiktoken.
 
-    def __init__(self, model: str = "gpt-3.5-turbo"):
+    Includes LRU cache for performance optimization.
+    """
+
+    def __init__(self, model: str = "gpt-3.5-turbo", cache_size: int = 1024):
         """
         Initialize token counter.
 
         Args:
             model: Model name for tiktoken encoding (default: gpt-3.5-turbo)
+            cache_size: LRU cache size for token counts (default: 1024)
         """
         if tiktoken is None:
             raise ImportError(
@@ -61,10 +66,37 @@ class TokenCounter:
                 "Install with: pip install tiktoken"
             )
         self.encoding = tiktoken.encoding_for_model(model)
+        self.cache_size = cache_size
+        self._cache = {}  # Simple dict cache (hash: count)
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     def count_tokens(self, text: str) -> int:
-        """Count tokens in text."""
-        return len(self.encoding.encode(text))
+        """
+        Count tokens in text with caching.
+
+        Uses hash-based caching for repeated text chunks.
+        """
+        # Use hash for cache key (faster than storing full text)
+        text_hash = hash(text)
+
+        if text_hash in self._cache:
+            self._cache_hits += 1
+            return self._cache[text_hash]
+
+        # Cache miss - compute tokens
+        self._cache_misses += 1
+        count = len(self.encoding.encode(text))
+
+        # Add to cache (simple eviction: clear if too large)
+        if len(self._cache) >= self.cache_size:
+            # Clear oldest half of cache (simple LRU approximation)
+            keys_to_remove = list(self._cache.keys())[: self.cache_size // 2]
+            for key in keys_to_remove:
+                del self._cache[key]
+
+        self._cache[text_hash] = count
+        return count
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -73,6 +105,29 @@ class TokenCounter:
         More accurate than simple word count, faster than tiktoken.
         """
         return len(text) // 4
+
+    def get_cache_stats(self) -> dict:
+        """
+        Get cache performance statistics.
+
+        Returns:
+            Dict with cache hits, misses, and hit rate
+        """
+        total = self._cache_hits + self._cache_misses
+        hit_rate = self._cache_hits / total if total > 0 else 0.0
+
+        return {
+            "hits": self._cache_hits,
+            "misses": self._cache_misses,
+            "hit_rate": hit_rate,
+            "cache_size": len(self._cache),
+        }
+
+    def clear_cache(self) -> None:
+        """Clear the token count cache."""
+        self._cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
 
 
 class RecursiveChunker:
@@ -84,6 +139,7 @@ class RecursiveChunker:
     - Overlap between chunks
     - Code block integrity
     - Paragraph boundaries
+    - Metadata enrichment (optional)
     """
 
     # Sentence boundary patterns
@@ -99,6 +155,7 @@ class RecursiveChunker:
         overlap: int = 50,
         respect_code_blocks: bool = True,
         model: str = "gpt-3.5-turbo",
+        enrich_metadata: bool = False,
     ):
         """
         Initialize recursive chunker.
@@ -108,16 +165,28 @@ class RecursiveChunker:
             overlap: Token overlap between chunks
             respect_code_blocks: Don't split code blocks mid-block
             model: Model for token counting
+            enrich_metadata: Whether to enrich chunks with section/page metadata
         """
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.respect_code_blocks = respect_code_blocks
+        self.enrich_metadata = enrich_metadata
 
         # Initialize token counter if available
         try:
             self.token_counter = TokenCounter(model)
         except ImportError:
             self.token_counter = None
+
+        # Initialize metadata enricher if requested
+        if self.enrich_metadata:
+            try:
+                from dartboard.ingestion.metadata_extractors import MetadataEnricher
+
+                self.metadata_enricher = MetadataEnricher()
+            except ImportError:
+                self.metadata_enricher = None
+                self.enrich_metadata = False
 
     def chunk(self, document: Document) -> List[Chunk]:
         """
