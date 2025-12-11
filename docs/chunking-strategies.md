@@ -10,12 +10,14 @@
 
 ## Current Implementation Status
 
-⚠️ **NOTE**: As of December 2025, the chunking module is **planned but not yet implemented** in this repository. The following documentation describes the recommended approach and will guide implementation.
+✅ **IMPLEMENTED**: As of December 11, 2025, the chunking module is **fully implemented** and tested.
 
 **Implementation Status**:
 - ✅ Document loaders (PDF, Markdown, Code) - Complete
-- ⏳ Chunking pipeline - Planned for Phase 1 (2 days effort)
-- 📋 See [RAG_IMPLEMENTATION_SUMMARY.md](../RAG_IMPLEMENTATION_SUMMARY.md) for roadmap
+- ✅ Chunking pipeline - **COMPLETE** (SentenceChunker, EmbeddingSemanticChunker, SemanticChunker, FixedSizeChunker)
+- ✅ Comprehensive test suite (31 tests passing)
+- ✅ End-to-end integration pipeline
+- 📋 See implementation at [`dartboard/ingestion/chunking.py`](../dartboard/ingestion/chunking.py)
 
 ## Recommended Chunking Strategies
 
@@ -299,59 +301,80 @@ tokens = tokenizer.tokenize(text)
 return len(tokens)
 ```
 
-## Planned Implementation
+## Implementation
 
 ### Module Structure
 
 ```
 dartboard/ingestion/chunking.py
-├── BaseChunker (abstract class)
-├── FixedSizeChunker
-├── SentenceChunker (recommended default)
-├── RecursiveChunker
-└── SemanticChunker
+├── TokenCounter (tiktoken-based token counting)
+├── Document (data model)
+├── Chunk (data model)
+├── RecursiveChunker (sentence-aware with overlap)
+├── SentenceChunker (alias for RecursiveChunker - RECOMMENDED DEFAULT)
+├── EmbeddingSemanticChunker (embedding-based semantic chunking - NEW!)
+├── SemanticChunker (paragraph/section-based)
+└── FixedSizeChunker (simple token-based)
 ```
 
-### Proposed API
+### Actual API
 
 ```python
-from dartboard.ingestion.chunking import SentenceChunker
+from dartboard.ingestion.chunking import SentenceChunker, Document
 from dartboard.ingestion.loaders import PDFLoader
+from dartboard.embeddings import SentenceTransformerModel
 
 # Load document
 loader = PDFLoader()
 documents = loader.load("whitepaper.pdf")
 
-# Chunk documents
+# Chunk documents with SentenceChunker (RECOMMENDED)
 chunker = SentenceChunker(
     chunk_size=512,
     overlap=50,
-    preserve_sentences=True
+    respect_code_blocks=True  # Preserves code blocks
 )
 
 chunks = []
 for doc in documents:
-    doc_chunks = chunker.chunk(doc.content)
-    for i, chunk_text in enumerate(doc_chunks):
-        chunk = Chunk(
-            id=f"{doc.source}_{i}",
-            text=chunk_text,
-            metadata={
-                "source": doc.source,
-                "chunk_index": i,
-                "total_chunks": len(doc_chunks),
-                **doc.metadata
-            }
-        )
-        chunks.append(chunk)
+    doc_chunks = chunker.chunk(doc)  # Returns List[Chunk]
+    chunks.extend(doc_chunks)
+
+# Each chunk has:
+# - chunk.text: Full text content
+# - chunk.metadata: Dict with source, chunk_index, chunk_size
+# - chunk.chunk_index: Sequential index
+# - chunk.token_count: Token count (optional)
 
 # Embed chunks
 embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
-for chunk in chunks:
-    chunk.embedding = embedding_model.encode(chunk.text)
+embeddings = embedding_model.encode([c.text for c in chunks])
 
 # Add to vector store
 vector_store.add(chunks)
+```
+
+### Using EmbeddingSemanticChunker (Advanced)
+
+```python
+from dartboard.ingestion.chunking import EmbeddingSemanticChunker
+from dartboard.embeddings import SentenceTransformerModel
+
+# Load embedding model
+embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
+
+# Create semantic chunker
+chunker = EmbeddingSemanticChunker(
+    embedding_model=embedding_model,
+    similarity_threshold=0.75,  # Lower = fewer chunks
+    max_chunk_size=512
+)
+
+# Chunk based on semantic similarity
+chunks = chunker.chunk(document)
+
+# Chunks are grouped by semantic similarity
+# Chunks have metadata["semantic_coherence"] = True
 ```
 
 ## Best Practices
@@ -479,8 +502,29 @@ for chunker in [FixedSizeChunker(), SentenceChunker(), RecursiveChunker()]:
 Effective chunking is essential for RAG performance. **Sentence-aware chunking with 512 tokens and 50 token overlap** is recommended as the default strategy for most use cases.
 
 **Key Takeaways**:
-- ✅ Use **SentenceChunker** as default (512 tokens, 50 overlap)
-- ✅ Add rich **metadata** to chunks for provenance tracking
+
+- ✅ Use **SentenceChunker** as default (512 tokens, 50 overlap) - **IMPLEMENTED**
+- ✅ Use **EmbeddingSemanticChunker** for highest quality (slower but more coherent) - **IMPLEMENTED**
+- ✅ Add rich **metadata** to chunks for provenance tracking - **IMPLEMENTED**
 - ✅ Test different strategies and measure **retrieval impact**
 - ✅ Match chunk size to **embedding model limits** (typically 512 tokens)
-- 📋 **Coming soon**: Full implementation in Phase 1 (2 days effort)
+- ✅ **COMPLETE**: All chunkers implemented with comprehensive tests (31 passing)
+
+## Testing
+
+Run chunking tests:
+
+```bash
+# All chunking tests
+pytest test_chunking.py test_embedding_semantic_chunking.py -v
+
+# Integration demo
+python demo_chunking_endtoend.py
+```
+
+**Test Coverage**:
+
+- 18 tests for RecursiveChunker/SentenceChunker
+- 13 tests for EmbeddingSemanticChunker
+- Edge cases: empty documents, single sentences, code blocks
+- Metadata preservation and token counting

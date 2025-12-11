@@ -2,9 +2,18 @@
 Text chunking utilities for RAG document processing.
 
 Implements multiple chunking strategies:
-- RecursiveChunker: Sentence-aware chunking with overlap
+- SentenceChunker (alias for RecursiveChunker): Sentence-aware chunking with overlap (RECOMMENDED DEFAULT)
+- RecursiveChunker: Sentence-aware chunking with code block preservation
+- EmbeddingSemanticChunker: Embedding-based semantic chunking (high quality, slower)
 - SemanticChunker: Paragraph/section-based chunking
-- FixedSizeChunker: Simple token-based chunking
+- FixedSizeChunker: Simple token-based chunking (fast, basic)
+
+Recommended usage:
+    from dartboard.ingestion.chunking import SentenceChunker, Document
+
+    chunker = SentenceChunker(chunk_size=512, overlap=50)
+    document = Document(content="...", metadata={}, source="doc.txt")
+    chunks = chunker.chunk(document)
 """
 
 import re
@@ -434,3 +443,199 @@ class FixedSizeChunker:
             start = end - chars_overlap
 
         return chunks
+
+
+# Alias: SentenceChunker is the recommended default chunker
+# It's implemented as RecursiveChunker with sentence-aware splitting
+SentenceChunker = RecursiveChunker
+
+
+class EmbeddingSemanticChunker:
+    """
+    Semantic chunker using sentence embeddings.
+
+    Splits text based on semantic similarity between adjacent sentences.
+    Groups sentences together when they are semantically similar (above threshold).
+    Starts new chunk when similarity drops below threshold.
+
+    This is more expensive than RecursiveChunker but produces more
+    semantically coherent chunks.
+    """
+
+    def __init__(
+        self,
+        embedding_model,
+        similarity_threshold: float = 0.75,
+        max_chunk_size: int = 512,
+        model: str = "gpt-3.5-turbo",
+    ):
+        """
+        Initialize embedding-based semantic chunker.
+
+        Args:
+            embedding_model: SentenceTransformer or compatible model
+            similarity_threshold: Minimum cosine similarity to stay in same chunk
+            max_chunk_size: Maximum tokens per chunk
+            model: Model for token counting
+        """
+        self.embedding_model = embedding_model
+        self.similarity_threshold = similarity_threshold
+        self.max_chunk_size = max_chunk_size
+
+        # Initialize token counter if available
+        try:
+            self.token_counter = TokenCounter(model)
+        except (ImportError, KeyError):
+            # ImportError: tiktoken not installed
+            # KeyError: invalid model name
+            self.token_counter = None
+
+    def chunk(self, document: Document) -> List[Chunk]:
+        """
+        Chunk document based on semantic similarity.
+
+        Args:
+            document: Document to chunk
+
+        Returns:
+            List of semantically coherent chunks
+        """
+        text = document.content
+
+        # Split into sentences
+        sentences = self._split_sentences(text)
+
+        if len(sentences) == 0:
+            return []
+
+        if len(sentences) == 1:
+            # Single sentence document
+            return [
+                Chunk(
+                    text=sentences[0],
+                    metadata={**document.metadata, "chunk_index": 0},
+                    chunk_index=0,
+                    token_count=self._count_tokens(sentences[0]),
+                )
+            ]
+
+        # Generate embeddings for all sentences
+        embeddings = self.embedding_model.encode(sentences)
+
+        # Ensure 2D array
+        if embeddings.ndim == 1:
+            embeddings = embeddings.reshape(1, -1)
+
+        # Group sentences based on similarity
+        chunks = self._create_chunks(sentences, embeddings, document.metadata)
+
+        return chunks
+
+    def _split_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using NLTK."""
+        try:
+            import nltk
+
+            try:
+                nltk.data.find("tokenizers/punkt")
+            except LookupError:
+                # Download punkt tokenizer if not available
+                nltk.download("punkt", quiet=True)
+
+            sentences = nltk.sent_tokenize(text)
+        except ImportError:
+            # Fallback to simple regex-based splitting if NLTK unavailable
+            import re
+
+            sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
+
+        return [s.strip() for s in sentences if s.strip()]
+
+    def _create_chunks(
+        self, sentences: List[str], embeddings, base_metadata: dict
+    ) -> List[Chunk]:
+        """Group sentences into chunks based on semantic similarity."""
+        import numpy as np
+
+        chunks = []
+        current_chunk = [sentences[0]]
+        current_tokens = self._count_tokens(sentences[0])
+        chunk_index = 0
+
+        for i in range(1, len(sentences)):
+            # Compute cosine similarity to previous sentence
+            similarity = self._cosine_similarity(embeddings[i - 1], embeddings[i])
+
+            sentence_tokens = self._count_tokens(sentences[i])
+
+            # Start new chunk if:
+            # 1. Similarity below threshold (semantic break)
+            # 2. Adding sentence would exceed max chunk size
+            should_split = (
+                similarity < self.similarity_threshold
+                or current_tokens + sentence_tokens > self.max_chunk_size
+            )
+
+            if should_split and current_chunk:
+                # Create chunk from accumulated sentences
+                chunk_text = " ".join(current_chunk)
+                chunks.append(
+                    Chunk(
+                        text=chunk_text,
+                        metadata={
+                            **base_metadata,
+                            "chunk_index": chunk_index,
+                            "chunk_size": current_tokens,
+                            "semantic_coherence": True,
+                        },
+                        chunk_index=chunk_index,
+                        token_count=current_tokens,
+                    )
+                )
+
+                # Start new chunk
+                current_chunk = [sentences[i]]
+                current_tokens = sentence_tokens
+                chunk_index += 1
+            else:
+                # Add sentence to current chunk
+                current_chunk.append(sentences[i])
+                current_tokens += sentence_tokens
+
+        # Add final chunk
+        if current_chunk:
+            chunk_text = " ".join(current_chunk)
+            chunks.append(
+                Chunk(
+                    text=chunk_text,
+                    metadata={
+                        **base_metadata,
+                        "chunk_index": chunk_index,
+                        "chunk_size": current_tokens,
+                        "semantic_coherence": True,
+                    },
+                    chunk_index=chunk_index,
+                    token_count=current_tokens,
+                )
+            )
+
+        return chunks
+
+    def _cosine_similarity(self, vec1, vec2) -> float:
+        """Compute cosine similarity between two vectors."""
+        import numpy as np
+
+        # Normalize vectors
+        vec1_norm = vec1 / (np.linalg.norm(vec1) + 1e-10)
+        vec2_norm = vec2 / (np.linalg.norm(vec2) + 1e-10)
+
+        # Compute dot product
+        return float(np.dot(vec1_norm, vec2_norm))
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text."""
+        if self.token_counter:
+            return self.token_counter.count_tokens(text)
+        else:
+            # Fallback: estimate 4 chars per token
+            return len(text) // 4

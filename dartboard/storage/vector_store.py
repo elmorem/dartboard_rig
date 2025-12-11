@@ -57,6 +57,11 @@ class VectorStore(ABC):
         """Return total number of chunks in store."""
         pass
 
+    @abstractmethod
+    def list_all(self) -> List[Chunk]:
+        """Return all chunks in the store."""
+        pass
+
 
 class FAISSStore(VectorStore):
     """FAISS-based vector store (in-memory or disk-persisted)."""
@@ -219,6 +224,10 @@ class FAISSStore(VectorStore):
         """Return number of chunks."""
         return len(self.chunks)
 
+    def list_all(self) -> List[Chunk]:
+        """Return all chunks in the store."""
+        return self.chunks.copy()
+
     def _save(self) -> None:
         """Save index to disk."""
         import faiss
@@ -361,3 +370,7 @@ class PineconeStore(VectorStore):
         if self.namespace:
             return stats.namespaces.get(self.namespace, {}).get("vector_count", 0)
         return stats.total_vector_count
+
+    def list_all(self) -> List[Chunk]:
+        """Return all chunks in the store (from cache)."""
+        return list(self.chunk_cache.values())
