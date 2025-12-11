@@ -1,19 +1,42 @@
 # Dartboard RAG Integration - Implementation Summary
 
-## What Has Been Built
+## What Has Been Built (Updated Dec 2025)
 
-### ✅ Complete Dartboard Algorithm Implementation
+### ✅ Complete Retrieval System
 - **Core algorithm** ([dartboard/core.py](dartboard/core.py))
-- **Evaluation metrics** ([dartboard/evaluation/metrics.py](dartboard/evaluation/metrics.py))
-- **Synthetic datasets** ([dartboard/datasets/synthetic.py](dartboard/datasets/synthetic.py))
-- **6 comprehensive tests** - all passing ✓
+- **BM25 retrieval** ([dartboard/retrieval/bm25.py](dartboard/retrieval/bm25.py)) - Sparse keyword matching
+- **Dense retrieval** ([dartboard/retrieval/dense.py](dartboard/retrieval/dense.py)) - Semantic vector search
+- **Hybrid retrieval** ([dartboard/retrieval/hybrid.py](dartboard/retrieval/hybrid.py)) - RRF fusion
+- **Dartboard retrieval** - Diversity-aware selection
+- **Comprehensive test suite** - all passing ✓
 
-### ✅ Integration Components (Starter Code)
+### ✅ Evaluation & Benchmarking
+- **Evaluation metrics** ([dartboard/evaluation/metrics.py](dartboard/evaluation/metrics.py))
+  - Standard IR metrics: MRR, MAP, NDCG, Recall, Precision
+  - Diversity metrics: ILD, Alpha-NDCG
+- **Dataset loaders** ([dartboard/evaluation/datasets.py](dartboard/evaluation/datasets.py))
+  - MS MARCO loader with caching
+  - BEIR dataset loader (SciFact, ArguAna, Climate-FEVER, NFCorpus, FiQA)
+  - Corpus sampling for large datasets (tested on 5.4M docs)
+- **Benchmark runner** ([benchmarks/scripts/run_benchmark.py](benchmarks/scripts/run_benchmark.py))
+  - Automated evaluation across datasets
+  - JSON result export
+  - Comprehensive metric computation
+
+### ✅ Visualization & UI
+- **Streamlit benchmark viewer** ([streamlit_app/](streamlit_app/))
+  - Interactive result exploration
+  - Metric explanations with tooltips
+  - Dataset comparison views
+  - Performance visualization
 - **Vector store abstraction** ([dartboard/storage/vector_store.py](dartboard/storage/vector_store.py))
   - FAISS implementation (local, fast)
   - Pinecone implementation (cloud, scalable)
-- **Hybrid retriever** ([dartboard/api/hybrid_retriever.py](dartboard/api/hybrid_retriever.py))
-  - Two-stage: Vector search → Dartboard refinement
+
+### 📊 Benchmark Results (Dec 2025)
+- **SciFact** (5,183 docs): Hybrid best - NDCG@10=0.78, Recall@10=0.87
+- **ArguAna** (8,674 docs): Dense best - NDCG@10=0.31, Recall@10=0.68
+- **Climate-FEVER** (10K sampled): Dense best - NDCG@10=0.53, Recall@10=0.63
 
 ---
 
@@ -401,5 +424,10 @@ print(response["sources"])
 
 ---
 
-*Summary Document - 2025-11-20*
-*Ready for Phase 1 Implementation*
+## Status Update (Dec 2025)
+
+- ✅ Phase 5 (Real Datasets & Benchmarking) **COMPLETED**
+- 📊 Benchmarked 3 BEIR datasets with comprehensive results
+- 🎯 Corpus sampling validated on 5.4M document dataset
+- 📈 Streamlit viewer deployed with metric explanations
+- 🔨 Ready for Phase 1 RAG Implementation (Document Loaders, Chunking, LLM Integration)

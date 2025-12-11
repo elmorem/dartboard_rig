@@ -7,8 +7,25 @@ Comprehensive benchmarking framework for comparing retrieval methods (BM25, Dens
 This suite provides:
 - 📊 Automated benchmark runner for multiple retrieval methods
 - 📥 Dataset downloaders for MS MARCO and BEIR
-- 📈 Visualization tools for result analysis
-- 📝 HTML report generation with interactive charts
+- 📈 Streamlit-based interactive result viewer
+- 📝 Comprehensive metric analysis with diversity measures (ILD, Alpha-NDCG)
+- 🎯 Corpus sampling for large datasets (tested on Climate-FEVER 5.4M docs)
+
+## Latest Benchmark Results (Dec 2025)
+
+### BEIR Dataset Comparison
+
+| Dataset | Best Method | NDCG@10 | Recall@10 | Notes |
+|---------|-------------|---------|-----------|-------|
+| **SciFact** | Hybrid | 0.7826 | 0.872 | Scientific claims |
+| **ArguAna** | Dense | 0.3095 | 0.680 | Counter-arguments |
+| **Climate-FEVER** | Dense | 0.5291 | 0.632 | 10K sampled corpus |
+
+**Key Findings:**
+
+- Dense and Hybrid methods consistently outperform BM25
+- Dartboard shows excellent diversity (ILD scores) but needs optimization
+- Corpus sampling successfully handled Climate-FEVER's 5.4M documents
 
 ## Quick Start
 
@@ -43,6 +60,13 @@ python benchmarks/scripts/run_benchmark.py \
 python benchmarks/scripts/run_benchmark.py \
     --dataset beir-scifact \
     --methods bm25 dense hybrid
+
+# Large dataset with corpus sampling
+python benchmarks/scripts/run_benchmark.py \
+    --dataset beir-climate-fever \
+    --methods bm25 dense hybrid dartboard \
+    --sample 50 \
+    --max-corpus-docs 10000
 ```
 
 ### 3. Visualize Results

@@ -76,29 +76,18 @@ python test_loaders.py
 Launch the interactive web interface to compare retrieval methods:
 
 ```bash
-# Start FastAPI backend
-uvicorn dartboard.api.main:app --reload
-
-# In a separate terminal, start Streamlit UI
+# Start Streamlit UI (standalone mode)
 streamlit run streamlit_app/app.py
-```
-
-Or using Docker:
-
-```bash
-# Start both API and Streamlit UI
-docker-compose --profile ui up
-
-# Access Streamlit at http://localhost:8501
-# Access API docs at http://localhost:8000/docs
 ```
 
 **Features:**
 
 - Compare BM25, Dense, Hybrid, and Dartboard retrievers side-by-side
-- Adjust top-k results and enable cross-encoder reranking
-- View score distributions, latency comparisons, and overlap analysis
+- View benchmark results from MS MARCO and BEIR datasets
+- Interactive metric explanations (MRR, MAP, NDCG, Recall, Precision, ILD, Alpha-NDCG)
+- Score distributions, latency comparisons, and overlap analysis
 - Interactive visualizations with Plotly charts
+- Dataset comparison across SciFact, ArguAna, and Climate-FEVER
 
 See [streamlit_app/README.md](streamlit_app/README.md) for detailed usage.
 
@@ -168,11 +157,21 @@ vastai/
 
 ### ✅ Complete
 - [x] Dartboard algorithm (greedy selection, information gain)
+- [x] BM25, Dense, Hybrid retrieval methods
 - [x] Vector storage (FAISS, Pinecone)
 - [x] Document loaders (PDF, Markdown, Code)
-- [x] Evaluation metrics (NDCG, MAP, diversity)
-- [x] Comprehensive test suite (6 tests, all passing)
-- [x] Hybrid retrieval (vector + Dartboard)
+- [x] Evaluation framework with diversity metrics (ILD, Alpha-NDCG)
+- [x] Comprehensive benchmark suite (MS MARCO, BEIR datasets)
+- [x] Streamlit comparison UI with visualizations
+- [x] Corpus sampling for large datasets (Climate-FEVER 5.4M → 10K docs)
+- [x] Comprehensive test suite (all passing)
+- [x] Metric explanations in UI (MRR, MAP, NDCG, Recall, Precision, ILD, Alpha-NDCG)
+
+### 📊 Recent Benchmarks (Dec 2025)
+
+- **SciFact** (5,183 docs): Hybrid best - NDCG@10=0.78, Recall@10=0.87
+- **ArguAna** (8,674 docs): Dense best - NDCG@10=0.31, Recall@10=0.68
+- **Climate-FEVER** (10K sampled): Dense best - NDCG@10=0.53, Recall@10=0.63
 
 ### 🔨 In Progress
 - [ ] Chunking pipeline (2 days)
@@ -300,7 +299,7 @@ For questions or contributions, please open an issue on GitHub.
 
 ---
 
-**Status:** ✅ Core algorithm complete | 🔨 Building RAG integration  
+**Status:** ✅ Core algorithm complete | ✅ Benchmarking complete | 🔨 Building RAG integration
 **Next:** Chunking pipeline (2 days) → LLM integration (2 days) → FastAPI (2 days)
 
-*Last Updated: 2025-11-20*
+*Last Updated: 2025-12-03*
