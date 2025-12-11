@@ -51,9 +51,9 @@ echo "2) SSH (recommended, requires SSH key setup)"
 read -p "Enter choice (1 or 2): " AUTH_CHOICE
 
 if [ "$AUTH_CHOICE" = "2" ]; then
-    REMOTE_URL="git@github.com:$GITHUB_USER/vastai.git"
+    REMOTE_URL="git@github.com:$GITHUB_USER/dartboard_rig.git"
 else
-    REMOTE_URL="https://github.com/$GITHUB_USER/vastai.git"
+    REMOTE_URL="https://github.com/$GITHUB_USER/dartboard_rig.git"
 fi
 
 git remote add origin $REMOTE_URL
@@ -77,7 +77,7 @@ echo "================================"
 echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
-echo "1. Visit https://github.com/$GITHUB_USER/vastai"
+echo "1. Visit https://github.com/$GITHUB_USER/dartboard_rig"
 echo "2. Verify files are there"
 echo "3. Check repository is Private"
 echo "4. (Optional) Create first PR branch:"

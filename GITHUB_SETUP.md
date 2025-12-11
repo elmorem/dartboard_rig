@@ -5,7 +5,7 @@
 ### Via GitHub Website
 
 1. Go to https://github.com/new
-2. **Repository name:** `vastai` (or your preferred name)
+2. **Repository name:** `dartboard_rig` (or your preferred name)
 3. **Description:** "Dartboard RAG system for diversity-aware document retrieval"
 4. **Visibility:** ✅ **Private**
 5. **Initialize repository:**
@@ -24,7 +24,7 @@ brew install gh
 gh auth login
 
 # Create private repo
-gh repo create vastai --private --description "Dartboard RAG system"
+gh repo create dartboard_rig --private --description "Dartboard RAG system"
 ```
 
 ---
@@ -33,7 +33,7 @@ gh repo create vastai --private --description "Dartboard RAG system"
 
 ```bash
 # Navigate to project
-cd /Users/markelmore/_code/vastai
+cd /Users/markelmore/_code/dartboard_rig
 
 # Initialize git (if not already done)
 git init
@@ -114,10 +114,10 @@ git commit -m "Initial commit: Dartboard RAG implementation
 
 ```bash
 # Add remote (replace USERNAME with your GitHub username)
-git remote add origin https://github.com/USERNAME/vastai.git
+git remote add origin https://github.com/USERNAME/dartboard_rig.git
 
 # Or use SSH (recommended)
-git remote add origin git@github.com:USERNAME/vastai.git
+git remote add origin git@github.com:USERNAME/dartboard_rig.git
 
 # Verify remote
 git remote -v
@@ -141,7 +141,7 @@ git push -u origin main
 
 ## Step 7: Verify on GitHub
 
-1. Go to https://github.com/USERNAME/vastai
+1. Go to https://github.com/USERNAME/dartboard_rig
 2. Verify files are there
 3. Check that README displays correctly
 4. Verify repository is **Private** (lock icon)

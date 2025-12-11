@@ -50,25 +50,25 @@
 
 ### Option 2: Manual (GitHub Website)
 1. Go to https://github.com/new
-2. Create **private** repo named `vastai`
+2. Create **private** repo named `dartboard_rig`
 3. DO NOT initialize with README/gitignore
 4. Run:
 ```bash
 git init
 git add .
 git commit -m "Initial commit: Dartboard RAG implementation"
-git remote add origin https://github.com/USERNAME/vastai.git
+git remote add origin https://github.com/USERNAME/dartboard_rig.git
 git branch -M main
 git push -u origin main
 ```
 
 ### Option 3: GitHub CLI
 ```bash
-gh repo create vastai --private --description "Dartboard RAG system"
+gh repo create dartboard_rig --private --description "Dartboard RAG system"
 git init
 git add .
 git commit -m "Initial commit: Dartboard RAG implementation"
-git remote add origin https://github.com/USERNAME/vastai.git
+git remote add origin https://github.com/USERNAME/dartboard_rig.git
 git branch -M main
 git push -u origin main
 ```
@@ -189,7 +189,7 @@ Total: ~3,500+ LOC ready to commit
 ## After Pushing to GitHub
 
 ### 1. Verify Repository
-- [ ] Visit https://github.com/USERNAME/vastai
+- [ ] Visit https://github.com/USERNAME/dartboard_rig
 - [ ] README displays correctly with badges
 - [ ] Repository shows as 🔒 Private
 - [ ] All files present

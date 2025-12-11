@@ -457,7 +457,7 @@ Deployment:
 ## File Structure
 
 ```
-vastai/
+dartboard_rig/
 ├── dartboard/
 │   ├── api/
 │   │   ├── __init__.py

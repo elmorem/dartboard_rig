@@ -24,8 +24,8 @@ Dartboard is a RAG system that uses **relevant information gain** to select dive
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/vastai.git
-cd vastai
+git clone https://github.com/yourusername/dartboard_rig.git
+cd dartboard_rig
 
 # Create virtual environment
 python3.13 -m venv .venv
@@ -124,7 +124,7 @@ Response + Citations
 ## Project Structure
 
 ```
-vastai/
+dartboard_rig/
 ├── dartboard/                 # Core package
 │   ├── core.py               # Dartboard algorithm
 │   ├── embeddings.py         # Embedding models

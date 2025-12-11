@@ -275,7 +275,7 @@ curl -X POST http://localhost:8000/query \
 ## File Structure
 
 ```
-vastai/
+dartboard_rig/
 ├── README_DARTBOARD.md              ← You are here
 ├── DARTBOARD_TEST_REPORT.md         ← Test results
 ├── RAG_INTEGRATION_PLAN.md          ← Full system plan

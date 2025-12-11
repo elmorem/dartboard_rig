@@ -30,8 +30,8 @@ Complete guide for deploying the Dartboard RAG API using Docker and Docker Compo
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/vastai.git
-cd vastai
+git clone https://github.com/yourusername/dartboard_rig.git
+cd dartboard_rig
 
 # Create environment file
 cp .env.example .env
@@ -249,11 +249,11 @@ docker-compose up -d --scale api=3
 
 ```bash
 # Backup vector store data
-docker run --rm -v vastai_data:/data -v $(pwd):/backup \
+docker run --rm -v dartboard_rig_data:/data -v $(pwd):/backup \
   alpine tar czf /backup/vector-store-backup.tar.gz -C /data .
 
 # Restore from backup
-docker run --rm -v vastai_data:/data -v $(pwd):/backup \
+docker run --rm -v dartboard_rig_data:/data -v $(pwd):/backup \
   alpine tar xzf /backup/vector-store-backup.tar.gz -C /data
 ```
 
@@ -308,7 +308,7 @@ lsof -i :8000  # macOS/Linux
 netstat -ano | findstr :8000  # Windows
 
 # Check container network
-docker network inspect vastai_rag-network
+docker network inspect dartboard_rig_rag-network
 
 # Test from within container
 docker-compose exec api curl http://localhost:8000/health
@@ -339,7 +339,7 @@ docker-compose exec api python -c \
 
 ```bash
 # Check data volume
-docker volume inspect vastai_data
+docker volume inspect dartboard_rig_data
 
 # Reset vector store (WARNING: deletes all data)
 docker-compose down -v
@@ -383,8 +383,8 @@ docker-compose logs -f api
 ## Support
 
 For issues and questions:
-- GitHub Issues: [github.com/yourusername/vastai/issues](https://github.com/yourusername/vastai/issues)
-- Documentation: [github.com/yourusername/vastai/wiki](https://github.com/yourusername/vastai/wiki)
+- GitHub Issues: [github.com/yourusername/dartboard_rig/issues](https://github.com/yourusername/dartboard_rig/issues)
+- Documentation: [github.com/yourusername/dartboard_rig/wiki](https://github.com/yourusername/dartboard_rig/wiki)
 
 ---
 
