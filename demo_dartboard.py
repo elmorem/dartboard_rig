@@ -4,6 +4,7 @@ Simple demo of Dartboard RAG retrieval.
 
 import numpy as np
 from dartboard.core import DartboardConfig, DartboardRetriever
+from dartboard.config import get_embedding_config
 from dartboard.embeddings import SentenceTransformerModel
 from dartboard.datasets.models import Chunk
 
@@ -13,7 +14,7 @@ def main():
 
     # Initialize embedding model
     print("Loading embedding model...")
-    embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
+    embedding_model = SentenceTransformerModel(get_embedding_config().model_name)
     print(f"✓ Model loaded (dim={embedding_model.embedding_dim})\n")
 
     # Create sample documents

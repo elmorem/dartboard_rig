@@ -26,6 +26,7 @@ from dartboard.embeddings import SentenceTransformerModel
 from dartboard.storage.vector_store import FAISSStore, VectorStore
 from dartboard.core import DartboardConfig, DartboardRetriever
 from dartboard.datasets.models import Chunk as StorageChunk
+from dartboard.config import get_embedding_config
 
 
 class SimpleInMemoryVectorStore(VectorStore):
@@ -107,10 +108,7 @@ Machine learning continues to transform industries from healthcare to finance. U
 class TestEndToEndChunkingPipeline:
     """End-to-end integration tests for chunking pipeline."""
 
-    @pytest.fixture
-    def embedding_model(self):
-        """Create embedding model."""
-        return SentenceTransformerModel("all-MiniLM-L6-v2")
+    # Note: embedding_model fixture provided by conftest.py
 
     @pytest.fixture
     def vector_store(self, embedding_model):
@@ -422,7 +420,8 @@ Content for section B in document {i + 1}.
 def test_full_rag_workflow():
     """Test complete RAG workflow from document to answer."""
     # Initialize components
-    embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
+    config = get_embedding_config()
+    embedding_model = SentenceTransformerModel(config.model_name)
     vector_store = SimpleInMemoryVectorStore(
         embedding_dim=embedding_model.embedding_dim
     )

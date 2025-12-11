@@ -18,6 +18,7 @@ import os
 from dartboard.ingestion.loaders import MarkdownLoader
 from dartboard.ingestion.chunking import SentenceChunker, EmbeddingSemanticChunker
 from dartboard.ingestion.pipeline import create_pipeline
+from dartboard.config import get_embedding_config
 from dartboard.embeddings import SentenceTransformerModel
 from dartboard.storage.vector_store import VectorStore
 from dartboard.core import DartboardConfig, DartboardRetriever
@@ -125,7 +126,7 @@ def main():
 
         # Step 4: Initialize embedding model
         print("\n[4] Loading embedding model...")
-        embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
+        embedding_model = SentenceTransformerModel(get_embedding_config().model_name)
         print(f"    Model loaded: all-MiniLM-L6-v2")
         print(f"    Embedding dimension: {embedding_model.embedding_dim}")
 

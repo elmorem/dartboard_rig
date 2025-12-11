@@ -21,13 +21,15 @@ from dartboard.ingestion.loaders import MarkdownLoader
 from dartboard.generation.generator import create_generator
 from dartboard.api.hybrid_retriever import HybridRetriever
 from dartboard.core import DartboardConfig, DartboardRetriever
+from dartboard.config import get_embedding_config
 
 logger = logging.getLogger(__name__)
 
 
-# Configuration from environment variables
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "384"))
+# Get embedding configuration from centralized config
+EMBEDDING_CONFIG = get_embedding_config()
+
+# Other configuration from environment variables
 VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "./data/vector_store")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
@@ -42,8 +44,13 @@ def get_embedding_model() -> SentenceTransformerModel:
     Returns:
         SentenceTransformerModel instance
     """
-    logger.info(f"Initializing embedding model: {EMBEDDING_MODEL}")
-    return SentenceTransformerModel(model_name=EMBEDDING_MODEL)
+    logger.info(
+        f"Initializing embedding model: {EMBEDDING_CONFIG.model_name} "
+        f"(dim={EMBEDDING_CONFIG.embedding_dim}, device={EMBEDDING_CONFIG.device})"
+    )
+    return SentenceTransformerModel(
+        model_name=EMBEDDING_CONFIG.model_name, device=EMBEDDING_CONFIG.device
+    )
 
 
 @lru_cache()
@@ -54,8 +61,11 @@ def get_vector_store() -> FAISSStore:
     Returns:
         FAISSStore instance
     """
-    logger.info(f"Initializing vector store at {VECTOR_STORE_PATH}")
-    return FAISSStore(embedding_dim=EMBEDDING_DIM)
+    logger.info(
+        f"Initializing vector store at {VECTOR_STORE_PATH} "
+        f"(dim={EMBEDDING_CONFIG.embedding_dim})"
+    )
+    return FAISSStore(embedding_dim=EMBEDDING_CONFIG.embedding_dim)
 
 
 def get_ingestion_pipeline():
@@ -137,8 +147,9 @@ def get_config():
         Dictionary of configuration values
     """
     return {
-        "embedding_model": EMBEDDING_MODEL,
-        "embedding_dim": EMBEDDING_DIM,
+        "embedding_model": EMBEDDING_CONFIG.model_name,
+        "embedding_dim": EMBEDDING_CONFIG.embedding_dim,
+        "embedding_device": EMBEDDING_CONFIG.device,
         "vector_store_path": VECTOR_STORE_PATH,
         "llm_provider": LLM_PROVIDER,
         "llm_model": LLM_MODEL,

@@ -6,6 +6,7 @@ that Dartboard naturally balances relevance and diversity.
 """
 
 from dartboard.core import DartboardConfig, DartboardRetriever
+from dartboard.config import get_embedding_config
 from dartboard.embeddings import SentenceTransformerModel
 from dartboard.datasets.synthetic import SyntheticConfig, SyntheticDatasetGenerator
 from dartboard.evaluation.metrics import DiversityAnalyzer
@@ -19,7 +20,7 @@ def main():
 
     # Initialize embedding model
     print("📦 Loading embedding model...")
-    embedding_model = SentenceTransformerModel("all-MiniLM-L6-v2")
+    embedding_model = SentenceTransformerModel(get_embedding_config().model_name)
     print(f"✓ Model loaded (dim={embedding_model.embedding_dim})")
     print()
 
@@ -37,7 +38,10 @@ def main():
         # Generate diverse dataset
         print(f"🔨 Generating dataset with diversity target {diversity_target}...")
         synthetic_config = SyntheticConfig(
-            num_clusters=2, passages_per_cluster=10, embedding_dim=384, seed=42
+            num_clusters=2,
+            passages_per_cluster=10,
+            embedding_dim=get_embedding_config().embedding_dim,
+            seed=42,
         )
         generator = SyntheticDatasetGenerator(synthetic_config)
         dataset = generator.generate_diverse_dataset(diversity_target=diversity_target)

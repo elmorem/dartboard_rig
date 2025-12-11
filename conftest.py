@@ -1,16 +1,12 @@
-"""Pytest configuration for all tests."""
+"""
+Root-level pytest configuration for test files in project root.
 
-import sys
-from pathlib import Path
+Provides shared fixtures for all tests, including configurable embedding models.
+"""
+
 import pytest
 
-# Add project root to Python path
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
-
-# Shared fixtures
 @pytest.fixture
 def embedding_model():
     """
@@ -18,6 +14,10 @@ def embedding_model():
 
     Can be overridden with EMBEDDING_MODEL environment variable.
     Defaults to configured model (usually all-MiniLM-L6-v2).
+
+    Usage in tests:
+        def test_something(embedding_model):
+            embeddings = embedding_model.encode("test text")
     """
     from dartboard.embeddings import SentenceTransformerModel
     from dartboard.config import get_embedding_config
@@ -28,7 +28,13 @@ def embedding_model():
 
 @pytest.fixture
 def embedding_config():
-    """Provide embedding configuration for tests."""
+    """
+    Provide embedding configuration for tests.
+
+    Usage in tests:
+        def test_config(embedding_config):
+            assert embedding_config.embedding_dim in [384, 768]
+    """
     from dartboard.config import get_embedding_config
 
     return get_embedding_config()

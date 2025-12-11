@@ -16,6 +16,7 @@ from dartboard.ingestion.chunking import (
     Chunk,
 )
 from dartboard.embeddings import SentenceTransformerModel
+from dartboard.config import get_embedding_config
 
 
 # Sample text with clear topic transitions
@@ -43,10 +44,7 @@ Java is the best language for enterprise applications. It provides strong type s
 class TestEmbeddingSemanticChunker:
     """Tests for EmbeddingSemanticChunker."""
 
-    @pytest.fixture
-    def embedding_model(self):
-        """Create embedding model for tests."""
-        return SentenceTransformerModel("all-MiniLM-L6-v2")
+    # Note: embedding_model fixture provided by conftest.py
 
     @pytest.fixture
     def chunker(self, embedding_model):
@@ -271,7 +269,8 @@ class TestEmbeddingSemanticChunker:
 def test_end_to_end_semantic_chunking():
     """End-to-end test of embedding-based semantic chunking."""
     # Initialize embedding model
-    model = SentenceTransformerModel("all-MiniLM-L6-v2")
+    config = get_embedding_config()
+    model = SentenceTransformerModel(config.model_name)
 
     # Create semantic chunker
     chunker = EmbeddingSemanticChunker(
