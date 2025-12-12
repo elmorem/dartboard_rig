@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 
 self.model = SentenceTransformer(model_name, device=device)
 ```
-
+                                                          
 **What it is:**
 - Python library built on top of HuggingFace Transformers
 - Optimized specifically for sentence/document embeddings
